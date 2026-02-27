@@ -1,5 +1,7 @@
 generator client {
   provider = "prisma-client-js"
+  // 使用 binary 引擎，配合 PrismaPg 适配器连接 pgbouncer
+  engineType = "binary"
 }
 
 datasource db {

@@ -11,16 +11,65 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Fetch all trends
+        id: fetch-trends
         run: |
-          # 获取所有平台数据
-          curl -s "http://trend.binaryworks.app/api/trends" || true
+          # 获取所有平台数据并保存到变量
+          RESPONSE=$(curl -s "http://trend.binaryworks.app/api/trends")
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+
+      - name: Parse and log results
+        run: |
+          RESPONSE=${{ steps.fetch-trends.outputs.response }}
+
+          # 检查是否是有效 JSON
+          if ! echo "$RESPONSE" | jq -e . > /dev/null 2>&1; then
+            echo "========== API 请求失败 =========="
+            echo "❌ 无法获取数据，API 返回无效响应"
+            echo "================================"
+            echo "success=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 检查整体成功状态
+          OVERALL_SUCCESS=$(echo "$RESPONSE" | jq -r '.success')
+
+          # 平台名称映射
+          PLATFORM_NAMES='{"douyin":"抖音","weibo":"微博","zhihu":"知乎","baidu":"百度","weixin":"微信","bilibili":"B站","xiaohongshu":"小红书","weixinvideo":"视频号"}'
+
+          # 统计变量
+          TOTAL=0
+          SUCCESS_COUNT=0
+          FAILED_COUNT=0
+
+          # 遍历每个平台
+          for platform in douyin weibo zhihu baidu weixin bilibili xiaohongshu weixinvideo; do
+            PLATFORM_NAME=$(echo "$PLATFORM_NAMES" | jq -r ".$platform")
+            TOTAL=$((TOTAL + 1))
+
+            # 获取该平台的数据数组
+            DATA=$(echo "$RESPONSE" | jq -r ".data.$platform // []")
+            COUNT=$(echo "$DATA" | jq 'length')
+
+            # 判断成功/失败：空数组表示该平台爬取失败
+            if [ "$COUNT" = "0" ]; then
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+              echo "========== ${PLATFORM_NAME}热榜 =========="
+              echo "❌ 失败: 爬取失败或无数据"
+              echo "   获取了 $COUNT 条数据"
+              echo ""
+            else
+              # 有数据，成功
+              SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+              echo "========== ${PLATFORM_NAME}热榜 =========="
+              echo "✅ 成功: $COUNT 条数据"
+              echo ""
+            fi
+          done
+
+          echo "================================"
+          echo "总计: $TOTAL 个平台, $SUCCESS_COUNT 个成功, $FAILED_COUNT 个失败"
+
+          # 即使有失败也不失败（保持 workflow 成功）
+          echo "success=true" >> $GITHUB_OUTPUT
         env:
           CI: true
-
-      - name: Success log
-        if: success()
-        run: echo "Trends fetched successfully"
-
-      - name: Failure log
-        if: failure()
-        run: echo "Trends fetch failed"
