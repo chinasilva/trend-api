@@ -14,7 +14,7 @@ jobs:
         id: fetch-trends
         run: |
           # 获取所有平台数据并保存到变量
-          RESPONSE=$(curl -s "http://trend.binaryworks.app/api/trends")
+          RESPONSE=$(curl -s "${{ secrets.API_URL }}/api/trends")
           echo "response=$RESPONSE" >> $GITHUB_OUTPUT
 
       - name: Parse and log results
