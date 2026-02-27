@@ -10,7 +10,7 @@ export default defineConfig({
     path: path.join(__dirname, "prisma/migrations"),
   },
   datasource: {
-    // 从环境变量读取数据库连接字符串
-    url: process.env.DATABASE_URL!,
+    // Vercel Supabase 使用 Session Pooler (端口 6543)，比直连更稳定
+    url: process.env.POSTGRES_URL!,
   },
 });
