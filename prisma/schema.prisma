@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // URL is configured in prisma.config.ts for Prisma 7
 }
 
 model TrendSource {
@@ -20,7 +20,7 @@ model TrendSource {
 }
 
 model Trend {
-  id @id @default(cuid())
+  id          String   @id @default(cuid())
   sourceId    String
   source      TrendSource @relation(fields: [sourceId], references: [id])
   title       String      // 标题
