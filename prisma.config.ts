@@ -15,8 +15,7 @@ export default defineConfig({
   },
   datasource: {
     // Vercel Supabase 使用 Session Pooler (端口 6543)，比直连更稳定
-    url: process.env.TREND_API_POSTGRES_URL || process.env.POSTGRES_URL!,
-    // Session Pooler 不支持预编译语句，需要禁用
-    preparedStatements: false,
+    // 添加 preparedStatements=false 禁用预编译语句（pg driver）
+    url: `${process.env.TREND_API_POSTGRES_URL || process.env.POSTGRES_URL!}?preparedStatements=false`,
   },
 });
