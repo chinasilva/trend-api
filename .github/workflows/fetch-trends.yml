@@ -13,7 +13,7 @@ jobs:
       - name: Fetch all trends
         run: |
           # 获取所有平台数据
-          curl -s "https://trend-api.vercel.app/api/trends" || true
+          curl -s "http://trend.binaryworks.app/api/trends" || true
         env:
           CI: true
 
