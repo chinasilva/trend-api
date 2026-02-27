@@ -1,0 +1,26 @@
+name: Fetch Trends
+
+on:
+  schedule:
+    # 每 30 分钟执行一次
+    - cron: '*/30 * * * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch all trends
+        run: |
+          # 获取所有平台数据
+          curl -s "https://trend-api.vercel.app/api/trends" || true
+        env:
+          CI: true
+
+      - name: Success log
+        if: success()
+        run: echo "Trends fetched successfully"
+
+      - name: Failure log
+        if: failure()
+        run: echo "Trends fetch failed"

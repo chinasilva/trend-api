@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TrendSource {
+  id        String   @id @default(cuid())
+  platform  String   @unique // 平台名称: douyin, weibo, zhihu, baidu, weixin, bilibili, xiaohongshu, weixinvideo
+  name      String   // 显示名称
+  icon      String?  // 图标
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trends    Trend[]
+}
+
+model Trend {
+  id @id @default(cuid())
+  sourceId    String
+  source      TrendSource @relation(fields: [sourceId], references: [id])
+  title       String      // 标题
+  hotValue    Int?        // 热度值
+  url         String?     // 原文链接
+  description String?     // 描述
+  rank        Int         // 排名
+  thumbnail   String?     // 封面图
+  extra       Json?       // 额外数据
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([sourceId, rank])
+  @@index([createdAt])
+}
