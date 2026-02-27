@@ -26,7 +26,7 @@ export interface PlatformConfig {
   platform: Platform;
   name: string;
   icon: string;
-  dataSource: 'tianapi' | 'dailyhot';
+  dataSource: 'tianapi' | 'dailyhot' | 'custom';
 }
 
 // 平台配置映射
@@ -36,8 +36,8 @@ export const PLATFORM_CONFIGS: Record<Platform, PlatformConfig> = {
   zhihu: { platform: 'zhihu', name: '知乎', icon: '💬', dataSource: 'tianapi' },
   baidu: { platform: 'baidu', name: '百度', icon: '🔍', dataSource: 'tianapi' },
   weixin: { platform: 'weixin', name: '微信', icon: '💙', dataSource: 'tianapi' },
-  bilibili: { platform: 'bilibili', name: 'B站', icon: '📺', dataSource: 'tianapi' },
-  xiaohongshu: { platform: 'xiaohongshu', name: '小红书', icon: '📕', dataSource: 'dailyhot' },
+  bilibili: { platform: 'bilibili', name: 'B站', icon: '📺', dataSource: 'custom' },
+  xiaohongshu: { platform: 'xiaohongshu', name: '小红书', icon: '📕', dataSource: 'custom' },
   weixinvideo: { platform: 'weixinvideo', name: '视频号', icon: '🎬', dataSource: 'dailyhot' },
 };
 
