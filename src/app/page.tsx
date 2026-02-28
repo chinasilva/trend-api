@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Platform, PLATFORMS, TrendItem } from '@/types/trend';
+import ContentPipelinePanel from '@/components/content/ContentPipelinePanel';
 import PlatformTabs from '@/components/PlatformTabs';
 import TrendList from '@/components/TrendList';
 
@@ -92,6 +93,7 @@ function formatDateParts(dateString: string) {
 }
 
 export default function Home() {
+  const [activeMode, setActiveMode] = useState<'trends' | 'content'>('trends');
   const [activePlatform, setActivePlatform] = useState<Platform | 'all'>('all');
   const [trendsData, setTrendsData] = useState<TrendsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -339,106 +341,146 @@ export default function Home() {
           </p>
         </header>
 
-        <section className="mb-14 max-w-5xl mx-auto bg-white/70 dark:bg-[#1c1c1e]/70 backdrop-blur-3xl border border-black/[0.04] dark:border-white/[0.05] rounded-[2.5rem] p-7 lg:p-10 shadow-[0_8px_40px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_40px_rgb(0,0,0,0.2)] transition-all">
-          <div className="flex items-center justify-between gap-4 mb-8">
-            <h2 className="text-[19px] font-semibold tracking-tight text-black dark:text-white flex items-center gap-2.5">
-              <svg className="w-5 h-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              历史快照穿越
-            </h2>
-            {snapshotLoading && (
-              <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-black/[0.03] dark:bg-white/[0.05] rounded-full backdrop-blur-md">
-                <div className="w-3.5 h-3.5 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin"></div>
-                <span className="text-[13px] font-medium text-gray-600 dark:text-gray-300 tracking-wide">加载中...</span>
-              </div>
-            )}
+        <div className="mb-10 flex justify-center">
+          <div className="inline-flex rounded-full border border-black/[0.08] bg-white/80 p-1 shadow-sm dark:border-white/[0.12] dark:bg-[#1c1c1e]/80">
+            <button
+              type="button"
+              onClick={() => setActiveMode('trends')}
+              className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+                activeMode === 'trends'
+                  ? 'bg-black text-white dark:bg-white dark:text-black'
+                  : 'text-black hover:bg-black/[0.03] dark:text-white dark:hover:bg-white/[0.06]'
+              }`}
+            >
+              热榜浏览
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMode('content')}
+              className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+                activeMode === 'content'
+                  ? 'bg-black text-white dark:bg-white dark:text-black'
+                  : 'text-black hover:bg-black/[0.03] dark:text-white dark:hover:bg-white/[0.06]'
+              }`}
+            >
+              内容生产
+            </button>
           </div>
+        </div>
 
-          {timelineError && (
-            <div className="p-4 bg-red-50 dark:bg-red-500/10 rounded-2xl mb-6 border border-red-100 dark:border-red-500/20">
-              <p className="text-[14px] text-red-600 dark:text-red-400 font-medium">{timelineError}</p>
+        {activeMode === 'content' && (
+          <div className="mb-14 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
+            <div className="mb-4 text-center text-sm text-gray-500 dark:text-gray-400">
+              基于实时热榜数据同步机会、生成草稿并提交公众号发布任务
             </div>
-          )}
+            <ContentPipelinePanel />
+          </div>
+        )}
 
-          {!timelineError && timelineItems.length === 0 && (
-            <div className="py-12 text-center bg-black/[0.02] dark:bg-white/[0.02] rounded-3xl border border-black/[0.02] dark:border-white/[0.02]">
-              <p className="text-[15px] font-medium text-gray-500 dark:text-gray-400">
-                {timelineLoading ? '正在检索历史线索...' : '暂无历史快照记录'}
-              </p>
-            </div>
-          )}
-
-          {timelineItems.length > 0 && (
-            <>
-              <div className="grid gap-3.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                {timelineItems.map((item) => {
-                  const active = toSnapshotKey(item.snapshotAt) === selectedSnapshotKey;
-                  const formattedDate = formatDateParts(item.snapshotAt);
-                  return (
-                    <button
-                      key={item.snapshotAt}
-                      onClick={() => void handleSelectSnapshot(item.snapshotAt)}
-                      disabled={snapshotLoading}
-                      className={`text-left rounded-2xl px-4 py-3.5 transition-all duration-300 flex flex-col gap-1.5 group ${
-                        active
-                          ? 'bg-black text-white dark:bg-white dark:text-black shadow-lg scale-100 ring-1 ring-black/5 dark:ring-white/5'
-                          : 'bg-white/80 dark:bg-[#2c2c2e]/80 text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-[#3a3a3c] shadow-sm hover:shadow-md border border-black/[0.03] dark:border-white/[0.04]'
-                      } ${snapshotLoading && !active ? 'opacity-50 cursor-not-allowed grayscale-[0.3]' : ''}`}
-                    >
-                      <p className={`text-[14px] font-semibold tracking-wide transition-colors ${active ? 'text-white dark:text-black' : 'text-gray-900 dark:text-white group-hover:text-black dark:group-hover:text-white'}`}>
-                        {formattedDate.datePart} <br />
-                        <span className="text-[12px] opacity-80 font-medium">{formattedDate.timePart}</span>
-                      </p>
-                      <p className={`text-[12px] font-medium mt-1 ${active ? 'text-white/70 dark:text-black/70' : 'text-gray-500 dark:text-gray-400'}`}>
-                        {item.count} 条记录
-                      </p>
-                    </button>
-                  );
-                })}
+        {activeMode === 'trends' && (
+          <>
+            <section className="mb-14 max-w-5xl mx-auto bg-white/70 dark:bg-[#1c1c1e]/70 backdrop-blur-3xl border border-black/[0.04] dark:border-white/[0.05] rounded-[2.5rem] p-7 lg:p-10 shadow-[0_8px_40px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_40px_rgb(0,0,0,0.2)] transition-all">
+              <div className="flex items-center justify-between gap-4 mb-8">
+                <h2 className="text-[19px] font-semibold tracking-tight text-black dark:text-white flex items-center gap-2.5">
+                  <svg className="w-5 h-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  历史快照穿越
+                </h2>
+                {snapshotLoading && (
+                  <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-black/[0.03] dark:bg-white/[0.05] rounded-full backdrop-blur-md">
+                    <div className="w-3.5 h-3.5 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin"></div>
+                    <span className="text-[13px] font-medium text-gray-600 dark:text-gray-300 tracking-wide">加载中...</span>
+                  </div>
+                )}
               </div>
 
-              {timelinePagination && timelinePagination.totalPages > 1 && (
-                <div className="mt-8 flex items-center justify-between border-t border-black/[0.04] dark:border-white/[0.05] pt-6">
-                  <p className="text-[13px] font-medium text-gray-400 dark:text-gray-500 tracking-wide bg-black/[0.03] dark:bg-white/[0.05] px-3 py-1.5 rounded-full">
-                    第 {timelinePagination.page} 页，共 {Math.max(timelinePagination.totalPages, 1)} 页
-                  </p>
-                  <div className="flex gap-2.5">
-                    <button
-                      onClick={() => void handleTimelinePageChange(timelinePagination.page - 1)}
-                      disabled={!timelinePagination.hasPrev || timelineLoading}
-                      className="w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-[#2c2c2e] shadow-sm border border-black/[0.04] dark:border-white/[0.05] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#3a3a3c] hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-sm transition-all"
-                      aria-label="Previous page"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => void handleTimelinePageChange(timelinePagination.page + 1)}
-                      disabled={!timelinePagination.hasNext || timelineLoading}
-                      className="w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-[#2c2c2e] shadow-sm border border-black/[0.04] dark:border-white/[0.05] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#3a3a3c] hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-sm transition-all"
-                      aria-label="Next page"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
+              {timelineError && (
+                <div className="p-4 bg-red-50 dark:bg-red-500/10 rounded-2xl mb-6 border border-red-100 dark:border-red-500/20">
+                  <p className="text-[14px] text-red-600 dark:text-red-400 font-medium">{timelineError}</p>
                 </div>
               )}
-            </>
-          )}
-        </section>
 
-        <PlatformTabs
-          activePlatform={activePlatform}
-          onPlatformChange={setActivePlatform}
-        />
+              {!timelineError && timelineItems.length === 0 && (
+                <div className="py-12 text-center bg-black/[0.02] dark:bg-white/[0.02] rounded-3xl border border-black/[0.02] dark:border-white/[0.02]">
+                  <p className="text-[15px] font-medium text-gray-500 dark:text-gray-400">
+                    {timelineLoading ? '正在检索历史线索...' : '暂无历史快照记录'}
+                  </p>
+                </div>
+              )}
 
-        <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
-          {renderContent()}
-        </div>
+              {timelineItems.length > 0 && (
+                <>
+                  <div className="grid gap-3.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                    {timelineItems.map((item) => {
+                      const active = toSnapshotKey(item.snapshotAt) === selectedSnapshotKey;
+                      const formattedDate = formatDateParts(item.snapshotAt);
+                      return (
+                        <button
+                          key={item.snapshotAt}
+                          onClick={() => void handleSelectSnapshot(item.snapshotAt)}
+                          disabled={snapshotLoading}
+                          className={`text-left rounded-2xl px-4 py-3.5 transition-all duration-300 flex flex-col gap-1.5 group ${
+                            active
+                              ? 'bg-black text-white dark:bg-white dark:text-black shadow-lg scale-100 ring-1 ring-black/5 dark:ring-white/5'
+                              : 'bg-white/80 dark:bg-[#2c2c2e]/80 text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-[#3a3a3c] shadow-sm hover:shadow-md border border-black/[0.03] dark:border-white/[0.04]'
+                          } ${snapshotLoading && !active ? 'opacity-50 cursor-not-allowed grayscale-[0.3]' : ''}`}
+                        >
+                          <p className={`text-[14px] font-semibold tracking-wide transition-colors ${active ? 'text-white dark:text-black' : 'text-gray-900 dark:text-white group-hover:text-black dark:group-hover:text-white'}`}>
+                            {formattedDate.datePart} <br />
+                            <span className="text-[12px] opacity-80 font-medium">{formattedDate.timePart}</span>
+                          </p>
+                          <p className={`text-[12px] font-medium mt-1 ${active ? 'text-white/70 dark:text-black/70' : 'text-gray-500 dark:text-gray-400'}`}>
+                            {item.count} 条记录
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {timelinePagination && timelinePagination.totalPages > 1 && (
+                    <div className="mt-8 flex items-center justify-between border-t border-black/[0.04] dark:border-white/[0.05] pt-6">
+                      <p className="text-[13px] font-medium text-gray-400 dark:text-gray-500 tracking-wide bg-black/[0.03] dark:bg-white/[0.05] px-3 py-1.5 rounded-full">
+                        第 {timelinePagination.page} 页，共 {Math.max(timelinePagination.totalPages, 1)} 页
+                      </p>
+                      <div className="flex gap-2.5">
+                        <button
+                          onClick={() => void handleTimelinePageChange(timelinePagination.page - 1)}
+                          disabled={!timelinePagination.hasPrev || timelineLoading}
+                          className="w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-[#2c2c2e] shadow-sm border border-black/[0.04] dark:border-white/[0.05] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#3a3a3c] hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-sm transition-all"
+                          aria-label="Previous page"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => void handleTimelinePageChange(timelinePagination.page + 1)}
+                          disabled={!timelinePagination.hasNext || timelineLoading}
+                          className="w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-[#2c2c2e] shadow-sm border border-black/[0.04] dark:border-white/[0.05] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#3a3a3c] hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-sm transition-all"
+                          aria-label="Next page"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+
+            <PlatformTabs
+              activePlatform={activePlatform}
+              onPlatformChange={setActivePlatform}
+            />
+
+            <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
+              {renderContent()}
+            </div>
+          </>
+        )}
 
         <footer className="mt-24 text-center">
           <p className="text-[13px] font-medium tracking-wider text-gray-400 dark:text-gray-500 uppercase flex items-center justify-center gap-2">
