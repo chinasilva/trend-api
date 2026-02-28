@@ -8,7 +8,13 @@ import TrendList from '@/components/TrendList';
 interface TrendsData {
   success: boolean;
   data: Record<Platform, TrendItem[]>;
-  updatedAt: string;
+  snapshotAt?: string | null;
+  updatedAt?: string | null;
+  source?: string | null;
+  hasData?: boolean;
+  error?: string;
+  message?: string;
+  errorCode?: string;
 }
 
 export default function Home() {
@@ -24,9 +30,19 @@ export default function Home() {
       try {
         const response = await fetch('/api/trends');
         if (!response.ok) {
-          throw new Error('Failed to fetch trends');
+          let errorMessage = `Failed to fetch trends (${response.status})`;
+          try {
+            const payload = await response.json();
+            errorMessage = payload.message || payload.error || errorMessage;
+          } catch {
+            // no-op: keep fallback error message
+          }
+          throw new Error(errorMessage);
         }
         const data = await response.json();
+        if (!data.success) {
+          throw new Error(data.message || data.error || 'Failed to fetch trends');
+        }
         setTrendsData(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
@@ -110,7 +126,9 @@ export default function Home() {
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             汇聚全网热门资讯 更新时间：
-            {trendsData?.updatedAt ? formatDate(trendsData.updatedAt) : '-'}
+            {(trendsData?.snapshotAt || trendsData?.updatedAt)
+              ? formatDate(trendsData?.snapshotAt || trendsData?.updatedAt || '')
+              : '-'}
           </p>
         </header>
 
