@@ -41,9 +41,9 @@ Each scraper exports a `fetch{Platform}` function returning `TrendItem[]`.
 
 ### Frontend (`src/app/` and `src/components/`)
 - Next.js App Router with React 19
-- Tailwind CSS ## Supported Platforms
+- Tailwind CSS for styling
 
-4 for styling
+## Supported Platforms
 
 | Platform | Data Source |
 |----------|-------------|
@@ -72,8 +72,11 @@ GitHub Actions workflow (`.github/workflows/fetch-trends.yml`) runs every 30 min
 ## GitHub Workflow
 
 All code changes must follow this workflow:
-1. Commit changes using `git commit`
-2. Create a Pull Request using `gh pr create`
-3. Merge the PR after review
+1. Make code changes and verify they work correctly
+2. Run `code-review-tester` agent to check for code issues, type errors, and other problems
+3. Fix any issues found by the tester
+4. Commit changes using `git commit`
+5. Create a Pull Request using `gh pr create`
+6. Merge the PR after review
 
 **Important**: Never push directly to main branch. Always use PR workflow.
