@@ -10,9 +10,12 @@ export async function POST() {
   try {
     const results: Array<{
       platform: Platform;
+      fetchedCount: number;
       successCount: number;
       failCount: number;
       error?: string;
+      dbError?: string;
+      snapshotError?: string;
     }> = [];
 
     // 并行获取所有平台数据
@@ -28,11 +31,13 @@ export async function POST() {
           setCache(platform, data);
         }
 
+        let trendSaveError: string | undefined;
         // 保存到旧的 Trend 表（带去重）
         try {
           await saveTrends(platform, data);
-        } catch (dbError) {
-          console.error(`Failed to save trends for ${platform}:`, dbError);
+        } catch (error) {
+          trendSaveError = error instanceof Error ? error.message : 'Failed to save trends';
+          console.error(`Failed to save trends for ${platform}:`, trendSaveError);
         }
 
         // 保存快照（新功能）
@@ -40,23 +45,31 @@ export async function POST() {
           const snapshotResult = await saveSnapshot(platform, data);
           return {
             platform,
+            fetchedCount: data.length,
             successCount: snapshotResult.successCount,
             failCount: snapshotResult.failCount,
+            dbError: trendSaveError,
           };
         } catch (snapshotError) {
-          console.error(`Failed to save snapshot for ${platform}:`, snapshotError);
+          const snapshotErrorMessage =
+            snapshotError instanceof Error ? snapshotError.message : 'Failed to save snapshot';
+          console.error(`Failed to save snapshot for ${platform}:`, snapshotErrorMessage);
           return {
             platform,
-            successCount: data.length,
-            failCount: 0,
+            fetchedCount: data.length,
+            successCount: 0,
+            failCount: data.length,
+            dbError: trendSaveError,
+            snapshotError: snapshotErrorMessage,
           };
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return {
           platform,
+          fetchedCount: 0,
           successCount: 0,
-          failCount: PLATFORMS.length,
+          failCount: 1,
           error: errorMessage,
         };
       }
@@ -66,9 +79,10 @@ export async function POST() {
     results.push(...allResults);
 
     // 统计成功/失败
+    const totalFetched = results.reduce((sum, r) => sum + r.fetchedCount, 0);
     const totalSuccess = results.reduce((sum, r) => sum + r.successCount, 0);
     const totalFailed = results.reduce((sum, r) => sum + r.failCount, 0);
-    const hasError = results.some(r => r.error);
+    const hasError = results.some((r) => r.error || r.dbError || r.snapshotError);
 
     return NextResponse.json({
       success: !hasError,
@@ -76,6 +90,7 @@ export async function POST() {
       data: {
         platforms: results,
         total: {
+          fetchedCount: totalFetched,
           successCount: totalSuccess,
           failCount: totalFailed,
         },

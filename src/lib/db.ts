@@ -7,9 +7,37 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+function resolveDatabaseUrl() {
+  const rawConnectionString =
+    process.env.TREND_API_POSTGRES_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.DATABASE_URL;
+
+  if (!rawConnectionString) {
+    throw new Error(
+      'Database URL is not configured. Set TREND_API_POSTGRES_URL, POSTGRES_URL, or DATABASE_URL.'
+    );
+  }
+
+  const url = new URL(rawConnectionString);
+
+  // pgbouncer + pg driver compatibility for SSL/prepared statements
+  if (!url.searchParams.has('sslmode')) {
+    url.searchParams.set('sslmode', 'require');
+  }
+  if (!url.searchParams.has('uselibpqcompat')) {
+    url.searchParams.set('uselibpqcompat', 'true');
+  }
+  if (!url.searchParams.has('preparedStatements')) {
+    url.searchParams.set('preparedStatements', 'false');
+  }
+
+  return url.toString();
+}
+
 function createPrismaClient() {
   // 使用 pgbouncer 连接池 (端口 6543)
-  const connectionString = process.env.TREND_API_POSTGRES_URL || process.env.POSTGRES_URL;
+  const connectionString = resolveDatabaseUrl();
   const pool = new Pool({ connectionString });
   const adapter = new PrismaPg(pool);
 
@@ -58,39 +86,51 @@ export async function saveTrends(platform: Platform, trends: TrendItem[]) {
     throw new Error(`TrendSource not found for platform: ${platform}`);
   }
 
-  // 使用 upsert 实现去重：同一来源下，标题+URL 相同则更新，否则创建
-  const results = await Promise.allSettled(
-    trends.map((trend) =>
-      prisma.trend.upsert({
-        where: {
-          // 去重键：sourceId + title + url (url 为空时使用空字符串)
-          sourceId_title_url: {
-            sourceId: source.id,
-            title: trend.title,
-            url: trend.url || '',
-          },
-        },
-        update: {
-          hotValue: trend.hotValue || null,
-          rank: trend.rank,
-          description: trend.description || null,
-          thumbnail: trend.thumbnail || null,
-          extra: trend.extra as Prisma.InputJsonValue | undefined,
-          updatedAt: new Date(),
-        },
-        create: {
+  const saveSingleTrend = async (trend: TrendItem) =>
+    prisma.trend.upsert({
+      where: {
+        sourceId_title_url: {
           sourceId: source.id,
           title: trend.title,
-          hotValue: trend.hotValue || null,
           url: trend.url || '',
-          description: trend.description || null,
-          rank: trend.rank,
-          thumbnail: trend.thumbnail || null,
-          extra: trend.extra as Prisma.InputJsonValue | undefined,
         },
-      })
-    )
+      },
+      update: {
+        hotValue: trend.hotValue || null,
+        rank: trend.rank,
+        description: trend.description || null,
+        thumbnail: trend.thumbnail || null,
+        extra: trend.extra as Prisma.InputJsonValue | undefined,
+        updatedAt: new Date(),
+      },
+      create: {
+        sourceId: source.id,
+        title: trend.title,
+        hotValue: trend.hotValue || null,
+        url: trend.url || '',
+        description: trend.description || null,
+        rank: trend.rank,
+        thumbnail: trend.thumbnail || null,
+        extra: trend.extra as Prisma.InputJsonValue | undefined,
+      },
+    });
+
+  const results = await Promise.allSettled(
+    trends.map((trend) => saveSingleTrend(trend))
   );
+
+  const hasSchemaMismatch = results.some(
+    (result) =>
+      result.status === 'rejected' &&
+      result.reason instanceof Error &&
+      result.reason.message.includes('no unique or exclusion constraint matching the ON CONFLICT specification')
+  );
+
+  if (hasSchemaMismatch) {
+    throw new Error(
+      'Trend table is missing unique constraint sourceId+title+url. Please run schema migration.'
+    );
+  }
 
   // 统计成功和失败数量
   const successCount = results.filter((r) => r.status === 'fulfilled').length;
@@ -154,8 +194,8 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[]) {
 
   const now = new Date();
 
-  // 分两步执行：先创建/更新 Content，再创建 Snapshot
-  const contents = await prisma.$transaction(
+  // 为避免大事务超时，按条目执行并统计部分成功
+  const contentResults = await Promise.allSettled(
     trends.map((trend) =>
       prisma.content.upsert({
         where: {
@@ -183,21 +223,36 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[]) {
     )
   );
 
-  // 创建快照记录
-  const snapshots = await prisma.$transaction(
-    trends.map((trend, index) =>
+  const snapshotCreateTasks: Array<Promise<unknown>> = [];
+  let contentFailCount = 0;
+
+  contentResults.forEach((result, index) => {
+    if (result.status !== 'fulfilled') {
+      contentFailCount += 1;
+      return;
+    }
+
+    const trend = trends[index];
+    snapshotCreateTasks.push(
       prisma.snapshot.create({
         data: {
-          contentId: contents[index].id,
+          contentId: result.value.id,
           rank: trend.rank,
           hotValue: trend.hotValue || null,
           createdAt: now,
         },
       })
-    )
-  );
+    );
+  });
 
-  return { successCount: snapshots.length, failCount: 0 };
+  const snapshotResults = await Promise.allSettled(snapshotCreateTasks);
+  const snapshotSuccessCount = snapshotResults.filter((r) => r.status === 'fulfilled').length;
+  const snapshotFailCount = snapshotResults.length - snapshotSuccessCount;
+
+  return {
+    successCount: snapshotSuccessCount,
+    failCount: contentFailCount + snapshotFailCount,
+  };
 }
 
 // 按日期查询快照

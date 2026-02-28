@@ -3,6 +3,24 @@ import { getTrendsFromDB, formatTrendsForAPI, getLatestSnapshot, getAllTrendsByD
 import { PLATFORMS, type Platform } from '@/types/trend';
 
 export const dynamic = 'force-dynamic';
+const GENERIC_FETCH_ERROR_MESSAGE = 'Failed to load trends. Please retry later.';
+
+function errorResponse(status: number, errorCode: string, message: string) {
+  return NextResponse.json(
+    {
+      success: false,
+      errorCode,
+      message,
+      error: errorCode,
+      data: {},
+      hasData: false,
+      snapshotAt: null,
+      updatedAt: null,
+      source: null,
+    },
+    { status }
+  );
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,13 +36,10 @@ export async function GET(request: NextRequest) {
       // 解析日期参数
       const date = new Date(dateParam);
       if (isNaN(date.getTime())) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Invalid date format. Use ISO format like 2026-02-27',
-            data: {},
-          },
-          { status: 400 }
+        return errorResponse(
+          400,
+          'INVALID_DATE',
+          'Invalid date format. Use ISO format like 2026-02-27'
         );
       }
 
@@ -41,7 +56,15 @@ export async function GET(request: NextRequest) {
       source = 'history';
     } else {
       // 无日期参数，返回最新数据（优先从快照表获取）
-      const snapshotResult = await getLatestSnapshot(platform || undefined);
+      let snapshotResult = { trends: {}, snapshotAt: null as string | null };
+      let hasSnapshotReadError = false;
+
+      try {
+        snapshotResult = await getLatestSnapshot(platform || undefined);
+      } catch (error) {
+        hasSnapshotReadError = true;
+        console.error('[GET /api/trends] failed to read snapshots:', error);
+      }
 
       if (snapshotResult.snapshotAt && Object.keys(snapshotResult.trends).length > 0) {
         data = snapshotResult.trends as Record<Platform, unknown[]>;
@@ -57,7 +80,7 @@ export async function GET(request: NextRequest) {
             trends[0].updatedAt
           ).toISOString()
           : new Date().toISOString();
-        source = 'database';
+        source = hasSnapshotReadError ? 'database-fallback' : 'database';
       }
     }
 
@@ -68,18 +91,12 @@ export async function GET(request: NextRequest) {
       success: true,
       data,
       snapshotAt,
+      updatedAt: snapshotAt,
       source,
       hasData,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    return NextResponse.json(
-      {
-        success: false,
-        error: message,
-        data: {},
-      },
-      { status: 500 }
-    );
+    console.error('[GET /api/trends] failed:', error);
+    return errorResponse(500, 'TRENDS_FETCH_FAILED', GENERIC_FETCH_ERROR_MESSAGE);
   }
 }
