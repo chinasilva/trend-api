@@ -72,8 +72,14 @@ GitHub Actions workflow (`.github/workflows/fetch-trends.yml`) runs every 30 min
 ## GitHub Workflow
 
 All code changes must follow this workflow:
-1. Commit changes using `git commit`
-2. Create a Pull Request using `gh pr create`
-3. Merge the PR after review
+1. Create a feature branch: `git checkout -b feat/your-feature`
+2. Make code changes and verify they work correctly
+3. Run `code-review-tester` agent or `npm run lint` && `npx tsc --noEmit` to check for issues
+4. Fix any issues found by the tester
+5. Commit changes on the feature branch: `git add . && git commit -m "description"`
+6. Push the feature branch: `git push -u origin feat/your-feature`
+7. Create a Pull Request using `gh pr create`
+8. Merge the PR after review
+9. Pull the latest main: `git checkout main && git pull`
 
 **Important**: Never push directly to main branch. Always use PR workflow.
