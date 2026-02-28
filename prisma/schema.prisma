@@ -19,6 +19,7 @@ model TrendSource {
   updatedAt DateTime @updatedAt
 
   trends    Trend[]
+  contents  Content[]
 }
 
 model Trend {
@@ -39,4 +40,35 @@ model Trend {
   @@unique([sourceId, title, url])
   @@index([sourceId, rank])
   @@index([createdAt])
+}
+
+// 内容表 - 去重后的内容实体
+model Content {
+  id          String     @id @default(cuid())
+  sourceId    String
+  source      TrendSource @relation(fields: [sourceId], references: [id])
+  title       String
+  url         String?
+  description String?
+  thumbnail   String?
+  extra       Json?
+
+  snapshots   Snapshot[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([sourceId, title, url])  // 去重
+}
+
+// 快照表 - 每次爬取的记录
+model Snapshot {
+  id        String   @id @default(cuid())
+  contentId String
+  content   Content  @relation(fields: [contentId], references: [id])
+  rank      Int
+  hotValue  Int?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([contentId, createdAt])
 }

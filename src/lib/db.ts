@@ -113,3 +113,258 @@ export async function getTrendsFromDB(platform?: Platform) {
 
   return trends;
 }
+
+// 将数据库数据格式化为 API 响应格式
+export function formatTrendsForAPI(trends: Awaited<ReturnType<typeof getTrendsFromDB>>) {
+  const result: Record<Platform, TrendItem[]> = {} as Record<Platform, TrendItem[]>;
+
+  for (const trend of trends) {
+    const platform = trend.source.platform as Platform;
+    if (!result[platform]) {
+      result[platform] = [];
+    }
+
+    result[platform].push({
+      title: trend.title,
+      hotValue: trend.hotValue ?? undefined,
+      url: trend.url || undefined,
+      description: trend.description ?? undefined,
+      rank: trend.rank,
+      thumbnail: trend.thumbnail ?? undefined,
+      extra: trend.extra as Record<string, unknown> | undefined,
+    });
+  }
+
+  return result;
+}
+
+// 保存快照（核心逻辑）
+export async function saveSnapshot(platform: Platform, trends: TrendItem[]) {
+  // 确保数据源存在
+  await ensureTrendSources();
+
+  // 获取数据源ID
+  const source = await prisma.trendSource.findUnique({
+    where: { platform },
+  });
+
+  if (!source) {
+    throw new Error(`TrendSource not found for platform: ${platform}`);
+  }
+
+  const now = new Date();
+
+  // 分两步执行：先创建/更新 Content，再创建 Snapshot
+  const contents = await prisma.$transaction(
+    trends.map((trend) =>
+      prisma.content.upsert({
+        where: {
+          sourceId_title_url: {
+            sourceId: source.id,
+            title: trend.title,
+            url: trend.url || '',
+          },
+        },
+        update: {
+          description: trend.description || null,
+          thumbnail: trend.thumbnail || null,
+          extra: trend.extra as Prisma.InputJsonValue | undefined,
+          updatedAt: now,
+        },
+        create: {
+          sourceId: source.id,
+          title: trend.title,
+          url: trend.url || '',
+          description: trend.description || null,
+          thumbnail: trend.thumbnail || null,
+          extra: trend.extra as Prisma.InputJsonValue | undefined,
+        },
+      })
+    )
+  );
+
+  // 创建快照记录
+  const snapshots = await prisma.$transaction(
+    trends.map((trend, index) =>
+      prisma.snapshot.create({
+        data: {
+          contentId: contents[index].id,
+          rank: trend.rank,
+          hotValue: trend.hotValue || null,
+          createdAt: now,
+        },
+      })
+    )
+  );
+
+  return { successCount: snapshots.length, failCount: 0 };
+}
+
+// 按日期查询快照
+export async function getTrendsByDate(platform: Platform, date: Date) {
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  // 查找最接近指定日期的快照
+  const snapshots = await prisma.snapshot.findMany({
+    where: {
+      createdAt: {
+        gte: startOfDay,
+        lte: endOfDay,
+      },
+      content: {
+        source: { platform },
+      },
+    },
+    include: {
+      content: true,
+    },
+    orderBy: { rank: 'asc' },
+  });
+
+  return snapshots.map((s) => ({
+    title: s.content.title,
+    hotValue: s.hotValue ?? undefined,
+    url: s.content.url || undefined,
+    description: s.content.description ?? undefined,
+    rank: s.rank,
+    thumbnail: s.content.thumbnail ?? undefined,
+    extra: s.content.extra as Record<string, unknown> | undefined,
+  }));
+}
+
+// 获取最新的快照
+export async function getLatestSnapshot(platform?: Platform) {
+  const where = platform ? { content: { source: { platform } } } : {};
+
+  // 找到最新的快照时间
+  const latestSnapshot = await prisma.snapshot.findFirst({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      content: {
+        include: {
+          source: true,
+        },
+      },
+    },
+  });
+
+  if (!latestSnapshot) {
+    return { trends: {}, snapshotAt: null };
+  }
+
+  const snapshotAt = latestSnapshot.createdAt;
+
+  // 获取同一时间点的所有快照
+  const tolerance = 60 * 1000; // 1分钟容差
+  const snapshots = await prisma.snapshot.findMany({
+    where: {
+      createdAt: {
+        gte: new Date(snapshotAt.getTime() - tolerance),
+        lte: new Date(snapshotAt.getTime() + tolerance),
+      },
+      ...where,
+    },
+    include: {
+      content: {
+        include: {
+          source: true,
+        },
+      },
+    },
+    orderBy: [{ content: { source: { platform: 'asc' } } }, { rank: 'asc' }],
+  });
+
+  // 按平台分组
+  const result: Record<Platform, TrendItem[]> = {} as Record<Platform, TrendItem[]>;
+
+  for (const s of snapshots) {
+    const p = s.content.source.platform as Platform;
+    if (!result[p]) {
+      result[p] = [];
+    }
+
+    result[p].push({
+      title: s.content.title,
+      hotValue: s.hotValue ?? undefined,
+      url: s.content.url || undefined,
+      description: s.content.description ?? undefined,
+      rank: s.rank,
+      thumbnail: s.content.thumbnail ?? undefined,
+      extra: s.content.extra as Record<string, unknown> | undefined,
+    });
+  }
+
+  return { trends: result, snapshotAt: snapshotAt.toISOString() };
+}
+
+// 按日期查询所有平台快照
+export async function getAllTrendsByDate(date: Date) {
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  // 找到最接近指定日期的快照时间
+  const nearestSnapshot = await prisma.snapshot.findFirst({
+    where: {
+      createdAt: {
+        gte: startOfDay,
+        lte: endOfDay,
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!nearestSnapshot) {
+    return { trends: {}, snapshotAt: null };
+  }
+
+  const snapshotAt = nearestSnapshot.createdAt;
+
+  // 获取同一时间点的所有快照（2分钟容差）
+  const tolerance = 60 * 1000;
+  const snapshots = await prisma.snapshot.findMany({
+    where: {
+      createdAt: {
+        gte: new Date(snapshotAt.getTime() - tolerance),
+        lte: new Date(snapshotAt.getTime() + tolerance),
+      },
+    },
+    include: {
+      content: {
+        include: {
+          source: true,
+        },
+      },
+    },
+    orderBy: [{ content: { source: { platform: 'asc' } } }, { rank: 'asc' }],
+  });
+
+  // 按平台分组
+  const result: Record<Platform, TrendItem[]> = {} as Record<Platform, TrendItem[]>;
+
+  for (const s of snapshots) {
+    const p = s.content.source.platform as Platform;
+    if (!result[p]) {
+      result[p] = [];
+    }
+
+    result[p].push({
+      title: s.content.title,
+      hotValue: s.hotValue ?? undefined,
+      url: s.content.url || undefined,
+      description: s.content.description ?? undefined,
+      rank: s.rank,
+      thumbnail: s.content.thumbnail ?? undefined,
+      extra: s.content.extra as Record<string, unknown> | undefined,
+    });
+  }
+
+  return { trends: result, snapshotAt: snapshotAt.toISOString() };
+}

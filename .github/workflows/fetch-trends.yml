@@ -13,8 +13,8 @@ jobs:
       - name: Fetch all trends
         id: fetch-trends
         run: |
-          # 获取所有平台数据并保存到变量
-          RESPONSE=$(curl -s "${{ secrets.API_URL }}/api/trends")
+          # 触发爬取并保存快照
+          RESPONSE=$(curl -s -X POST "${{ secrets.API_URL }}/api/trends/sync")
           echo "response=$RESPONSE" >> $GITHUB_OUTPUT
 
       - name: Parse and log results
@@ -46,22 +46,27 @@ jobs:
             PLATFORM_NAME=$(echo "$PLATFORM_NAMES" | jq -r ".$platform")
             TOTAL=$((TOTAL + 1))
 
-            # 获取该平台的数据数组
-            DATA=$(echo "$RESPONSE" | jq -r ".data.$platform // []")
-            COUNT=$(echo "$DATA" | jq 'length')
+            # 从新的响应格式中获取成功数量
+            SUCCESS=$(echo "$RESPONSE" | jq -r ".data.platforms[] | select(.platform == \"$platform\") | .successCount // 0")
+            FAILED=$(echo "$RESPONSE" | jq -r ".data.platforms[] | select(.platform == \"$platform\") | .failCount // 0")
 
-            # 判断成功/失败：空数组表示该平台爬取失败
-            if [ "$COUNT" = "0" ]; then
+            # 判断成功/失败：successCount > 0 表示成功
+            if [ "$SUCCESS" = "0" ] && [ "$FAILED" = "0" ]; then
               FAILED_COUNT=$((FAILED_COUNT + 1))
               echo "========== ${PLATFORM_NAME}热榜 =========="
               echo "❌ 失败: 爬取失败或无数据"
-              echo "   获取了 $COUNT 条数据"
+              echo "   获取了 0 条数据"
               echo ""
-            else
+            elif [ "$SUCCESS" -gt 0 ]; then
               # 有数据，成功
               SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
               echo "========== ${PLATFORM_NAME}热榜 =========="
-              echo "✅ 成功: $COUNT 条数据"
+              echo "✅ 成功: $SUCCESS 条数据"
+              echo ""
+            else
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+              echo "========== ${PLATFORM_NAME}热榜 =========="
+              echo "❌ 失败: $FAILED 条数据"
               echo ""
             fi
           done
