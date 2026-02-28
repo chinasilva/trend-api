@@ -1,6 +1,7 @@
 import type { TrendItem } from '@/types/trend';
 
 const TIANAPI_BASE_URL = process.env.TIANAPI_BASE_URL || 'https://apis.tianapi.com';
+const FETCH_TIMEOUT_MS = Number(process.env.TREND_FETCH_TIMEOUT_MS || 5000);
 
 export interface TianApiConfig {
   key: string;
@@ -15,9 +16,11 @@ export async function fetchTianApi(config: TianApiConfig): Promise<TrendItem[]> 
     throw new Error('TIANAPI_KEY is not configured');
   }
 
-  const url = `${TIANAPI_BASE_URL}${path}?key=${key}`;
+  const separator = path.includes('?') ? '&' : '?';
+  const url = `${TIANAPI_BASE_URL}${path}${separator}key=${encodeURIComponent(key)}`;
 
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
     },

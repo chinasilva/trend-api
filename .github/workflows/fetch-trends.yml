@@ -16,23 +16,39 @@ jobs:
           # 触发爬取并保存快照
           RESPONSE=$(curl -s -X POST "${{ secrets.API_URL }}/api/trends/sync" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
-          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+          {
+            echo 'response<<EOF'
+            echo "$RESPONSE"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
 
       - name: Parse and log results
+        env:
+          RESPONSE: ${{ steps.fetch-trends.outputs.response }}
+          CI: true
         run: |
-          RESPONSE=${{ steps.fetch-trends.outputs.response }}
-
           # 检查是否是有效 JSON
-          if ! echo "$RESPONSE" | jq -e . > /dev/null 2>&1; then
+          if ! printf '%s' "$RESPONSE" | jq -e . > /dev/null 2>&1; then
             echo "========== API 请求失败 =========="
             echo "❌ 无法获取数据，API 返回无效响应"
+            echo "原始响应: $RESPONSE"
             echo "================================"
             echo "success=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
           # 检查整体成功状态
-          OVERALL_SUCCESS=$(echo "$RESPONSE" | jq -r '.success')
+          OVERALL_SUCCESS=$(printf '%s' "$RESPONSE" | jq -r '.success')
+          if [ "$OVERALL_SUCCESS" != "true" ]; then
+            ERROR_CODE=$(printf '%s' "$RESPONSE" | jq -r '.errorCode // "UNKNOWN_ERROR"')
+            ERROR_MESSAGE=$(printf '%s' "$RESPONSE" | jq -r '.message // .error // "Unknown error"')
+            echo "========== API 返回错误 =========="
+            echo "❌ errorCode: $ERROR_CODE"
+            echo "❌ message: $ERROR_MESSAGE"
+            echo "================================"
+            echo "success=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           # 平台名称映射
           PLATFORM_NAMES='{"douyin":"抖音","weibo":"微博","zhihu":"知乎","baidu":"百度","weixin":"微信","bilibili":"B站","xiaohongshu":"小红书","weixinvideo":"视频号"}'
@@ -48,8 +64,8 @@ jobs:
             TOTAL=$((TOTAL + 1))
 
             # 从新的响应格式中获取成功数量
-            SUCCESS=$(echo "$RESPONSE" | jq -r --arg platform "$platform" '((.data.platforms // []) | map(select(.platform == $platform)) | .[0].successCount) // 0')
-            FAILED=$(echo "$RESPONSE" | jq -r --arg platform "$platform" '((.data.platforms // []) | map(select(.platform == $platform)) | .[0].failCount) // 0')
+            SUCCESS=$(printf '%s' "$RESPONSE" | jq -r --arg platform "$platform" '((.data.platforms // []) | map(select(.platform == $platform)) | .[0].successCount) // 0')
+            FAILED=$(printf '%s' "$RESPONSE" | jq -r --arg platform "$platform" '((.data.platforms // []) | map(select(.platform == $platform)) | .[0].failCount) // 0')
 
             # 判断成功/失败：successCount > 0 表示成功
             if [ "$SUCCESS" = "0" ] && [ "$FAILED" = "0" ]; then
@@ -77,5 +93,3 @@ jobs:
 
           # 即使有失败也不失败（保持 workflow 成功）
           echo "success=true" >> $GITHUB_OUTPUT
-        env:
-          CI: true

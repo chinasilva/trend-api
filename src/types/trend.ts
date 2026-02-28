@@ -38,7 +38,7 @@ export const PLATFORM_CONFIGS: Record<Platform, PlatformConfig> = {
   weixin: { platform: 'weixin', name: '微信', icon: '💙', dataSource: 'tianapi' },
   bilibili: { platform: 'bilibili', name: 'B站', icon: '📺', dataSource: 'custom' },
   xiaohongshu: { platform: 'xiaohongshu', name: '小红书', icon: '📕', dataSource: 'custom' },
-  weixinvideo: { platform: 'weixinvideo', name: '视频号', icon: '🎬', dataSource: 'dailyhot' },
+  weixinvideo: { platform: 'weixinvideo', name: '视频号', icon: '🎬', dataSource: 'custom' },
 };
 
 // 热榜条目
