@@ -197,7 +197,7 @@ export function formatTrendsForAPI(trends: Awaited<ReturnType<typeof getTrendsFr
 }
 
 // 保存快照（核心逻辑）
-export async function saveSnapshot(platform: Platform, trends: TrendItem[]) {
+export async function saveSnapshot(platform: Platform, trends: TrendItem[], snapshotAt?: Date) {
   // 确保数据源存在
   await ensureTrendSources();
 
@@ -210,7 +210,7 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[]) {
     throw new Error(`TrendSource not found for platform: ${platform}`);
   }
 
-  const now = new Date();
+  const snapshotCreatedAt = snapshotAt ? new Date(snapshotAt) : new Date();
 
   // 为避免大事务超时，按条目执行并统计部分成功
   const contentResults = await Promise.allSettled(
@@ -227,7 +227,7 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[]) {
           description: trend.description || null,
           thumbnail: trend.thumbnail || null,
           extra: trend.extra as Prisma.InputJsonValue | undefined,
-          updatedAt: now,
+          updatedAt: snapshotCreatedAt,
         },
         create: {
           sourceId: source.id,
@@ -257,7 +257,7 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[]) {
           contentId: result.value.id,
           rank: trend.rank,
           hotValue: trend.hotValue || null,
-          createdAt: now,
+          createdAt: snapshotCreatedAt,
         },
       })
     );
@@ -377,26 +377,19 @@ export async function getLatestSnapshot(platform?: Platform) {
 // 按快照时间点查询（用于时间线选择）
 export async function getTrendsBySnapshotAt(snapshotTime: Date, platform?: Platform) {
   const where = platform ? { content: { source: { platform } } } : {};
-  const minuteStart = new Date(snapshotTime);
-  minuteStart.setUTCSeconds(0, 0);
-  const minuteEnd = new Date(minuteStart.getTime() + 60 * 1000);
 
-  let center = minuteStart;
-  let createdAtRange: { gte: Date; lt: Date } | { gte: Date; lte: Date } = {
-    gte: minuteStart,
-    lt: minuteEnd,
-  };
-
-  // 优先按分钟桶精确匹配；若用户传入非时间线时间点，再容错回退到邻近快照。
+  // 优先按精确时间点命中（对应 timeline 返回的 snapshotAt）。
   const exactHit = await prisma.snapshot.findFirst({
     where: {
-      createdAt: createdAtRange,
+      createdAt: snapshotTime,
       ...where,
     },
-    orderBy: { createdAt: 'desc' },
   });
 
+  let targetCreatedAt: Date;
+
   if (!exactHit) {
+    // 容错：非 timeline 时间点输入时，回退到邻近快照。
     const nearestSnapshot = await prisma.snapshot.findFirst({
       where: {
         createdAt: {
@@ -412,17 +405,14 @@ export async function getTrendsBySnapshotAt(snapshotTime: Date, platform?: Platf
       return { trends: {}, snapshotAt: null };
     }
 
-    center = new Date(nearestSnapshot.createdAt);
-    center.setUTCSeconds(0, 0);
-    createdAtRange = {
-      gte: center,
-      lt: new Date(center.getTime() + 60 * 1000),
-    };
+    targetCreatedAt = nearestSnapshot.createdAt;
+  } else {
+    targetCreatedAt = exactHit.createdAt;
   }
 
   const snapshots = await prisma.snapshot.findMany({
     where: {
-      createdAt: createdAtRange,
+      createdAt: targetCreatedAt,
       ...where,
     },
     include: {
@@ -452,7 +442,7 @@ export async function getTrendsBySnapshotAt(snapshotTime: Date, platform?: Platf
     });
   }
 
-  return { trends: result, snapshotAt: center.toISOString() };
+  return { trends: result, snapshotAt: targetCreatedAt.toISOString() };
 }
 
 function toDate(value: unknown) {
@@ -461,7 +451,7 @@ function toDate(value: unknown) {
   return null;
 }
 
-// 获取快照时间线（按分钟聚合分页）
+// 获取快照时间线（按精确快照时间点分页）
 export async function getSnapshotTimeline(page = 1, pageSize = 20, platform?: Platform) {
   const safePage = Math.max(1, Math.floor(page));
   const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
@@ -470,7 +460,7 @@ export async function getSnapshotTimeline(page = 1, pageSize = 20, platform?: Pl
 
   const timelineRows = await prisma.$queryRaw<Array<{ snapshot_at: Date | string; count: number }>>(
     Prisma.sql`
-      SELECT date_trunc('minute', s."createdAt") AS snapshot_at, COUNT(*)::int AS count
+      SELECT s."createdAt" AS snapshot_at, COUNT(*)::int AS count
       FROM "Snapshot" s
       JOIN "Content" c ON c.id = s."contentId"
       JOIN "TrendSource" ts ON ts.id = c."sourceId"
@@ -487,7 +477,7 @@ export async function getSnapshotTimeline(page = 1, pageSize = 20, platform?: Pl
     Prisma.sql`
       SELECT COUNT(*)::int AS total
       FROM (
-        SELECT date_trunc('minute', s."createdAt")
+        SELECT s."createdAt"
         FROM "Snapshot" s
         JOIN "Content" c ON c.id = s."contentId"
         JOIN "TrendSource" ts ON ts.id = c."sourceId"

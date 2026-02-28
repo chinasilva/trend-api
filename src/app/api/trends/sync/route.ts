@@ -32,6 +32,8 @@ export async function POST(request: Request) {
       );
     }
 
+    const syncSnapshotAt = new Date();
+
     const results: Array<{
       platform: Platform;
       fetchedCount: number;
@@ -66,7 +68,7 @@ export async function POST(request: Request) {
 
         // 保存快照（新功能）
         try {
-          const snapshotResult = await saveSnapshot(platform, data);
+          const snapshotResult = await saveSnapshot(platform, data, syncSnapshotAt);
           return {
             platform,
             fetchedCount: data.length,
@@ -106,7 +108,7 @@ export async function POST(request: Request) {
     const totalFetched = results.reduce((sum, r) => sum + r.fetchedCount, 0);
     const totalSuccess = results.reduce((sum, r) => sum + r.successCount, 0);
     const totalFailed = results.reduce((sum, r) => sum + r.failCount, 0);
-    const hasError = results.some((r) => r.error || r.dbError || r.snapshotError);
+    const hasError = results.some((r) => r.error || r.dbError || r.snapshotError || r.failCount > 0);
 
     return NextResponse.json({
       success: !hasError,
