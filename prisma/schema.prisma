@@ -72,3 +72,197 @@ model Snapshot {
   @@index([createdAt])
   @@index([contentId, createdAt])
 }
+
+enum OpportunityStatus {
+  NEW
+  SELECTED
+  EXPIRED
+  DISCARDED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DraftStatus {
+  DRAFT
+  REVIEW
+  BLOCKED
+  READY
+  SUBMITTED
+  PUBLISHED
+}
+
+enum PublishJobStatus {
+  QUEUED
+  RUNNING
+  REVIEW
+  SUCCESS
+  FAILED
+  CANCELED
+}
+
+enum PublishDeliveryStage {
+  DRAFTBOX
+  PUBLISHED
+}
+
+model Account {
+  id          String   @id @default(cuid())
+  name        String
+  platform    String   @default("weixin")
+  description String?
+  isActive    Boolean  @default(true)
+  autoPublish Boolean  @default(false)
+  dailyLimit  Int      @default(3)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  categories    AccountCategory[]
+  opportunities Opportunity[]
+  drafts        Draft[]
+  publishJobs   PublishJob[]
+  metrics       PerformanceMetric[]
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  keywords    Json?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  accounts AccountCategory[]
+}
+
+model AccountCategory {
+  id         String   @id @default(cuid())
+  accountId  String
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, categoryId])
+  @@index([categoryId])
+}
+
+model TopicCluster {
+  id               String   @id @default(cuid())
+  fingerprint      String   @unique
+  title            String
+  keywords         Json?
+  evidences        Json?
+  resonanceCount   Int      @default(1)
+  growthScore      Float    @default(0)
+  latestSnapshotAt DateTime
+  windowStart      DateTime
+  windowEnd        DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  opportunities Opportunity[]
+
+  @@index([latestSnapshotAt])
+}
+
+model Opportunity {
+  id             String            @id @default(cuid())
+  topicClusterId String
+  accountId      String
+  score          Float
+  reasons        Json?
+  status         OpportunityStatus @default(NEW)
+  expiresAt      DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  topicCluster TopicCluster @relation(fields: [topicClusterId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  drafts       Draft[]
+  metrics      PerformanceMetric[]
+
+  @@unique([topicClusterId, accountId])
+  @@index([accountId, status, score])
+  @@index([createdAt])
+}
+
+model Draft {
+  id              String     @id @default(cuid())
+  opportunityId   String
+  accountId       String
+  title           String
+  outline         Json?
+  content         String
+  templateVersion String     @default("v1")
+  model           String
+  riskLevel       RiskLevel  @default(MEDIUM)
+  riskScore       Float      @default(0)
+  status          DraftStatus @default(DRAFT)
+  metadata        Json?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  opportunity Opportunity  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  publishJobs PublishJob[]
+  metrics     PerformanceMetric[]
+
+  @@index([accountId, status, createdAt])
+}
+
+model PublishJob {
+  id              String          @id @default(cuid())
+  accountId       String
+  draftId         String
+  provider        String          @default("wechat")
+  status          PublishJobStatus @default(QUEUED)
+  deliveryStage   PublishDeliveryStage @default(DRAFTBOX)
+  attempt         Int             @default(0)
+  externalId      String?
+  requestPayload  Json?
+  responsePayload Json?
+  errorMessage    String?
+  queuedAt        DateTime        @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  draft   Draft   @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  metrics PerformanceMetric[]
+
+  @@index([status, queuedAt])
+}
+
+model PerformanceMetric {
+  id            String   @id @default(cuid())
+  accountId     String
+  opportunityId String?
+  draftId       String?
+  publishJobId  String?
+  impressions   Int?
+  reads         Int?
+  likes         Int?
+  shares        Int?
+  comments      Int?
+  bookmarks     Int?
+  ctr           Float?
+  collectedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  draft       Draft?       @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  publishJob  PublishJob?  @relation(fields: [publishJobId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, collectedAt])
+}
