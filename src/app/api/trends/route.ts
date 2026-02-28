@@ -7,6 +7,7 @@ import {
   getTrendsByDate as getTrendsByDateFromDb,
   getTrendsBySnapshotAt,
 } from '@/lib/db';
+import { fetchAllTrends, fetchTrends } from '@/lib/scraper';
 import { PLATFORMS, type Platform } from '@/types/trend';
 
 export const dynamic = 'force-dynamic';
@@ -108,6 +109,27 @@ export async function GET(request: NextRequest) {
         data = snapshotResult.trends as Record<Platform, unknown[]>;
         snapshotAt = snapshotResult.snapshotAt;
         source = 'snapshot';
+
+        // 快照通常是按批次写入，若某些平台当次同步失败，尝试用 Trend 表兜底补齐缺失平台。
+        if (!platform) {
+          const missingPlatforms = PLATFORMS.filter((p) => (data[p]?.length ?? 0) === 0);
+          if (missingPlatforms.length > 0) {
+            const fallbackTrends = await getTrendsFromDB();
+            const fallbackData = formatTrendsForAPI(fallbackTrends) as Record<Platform, unknown[]>;
+            let filledCount = 0;
+
+            for (const p of missingPlatforms) {
+              if ((fallbackData[p]?.length ?? 0) > 0) {
+                data[p] = fallbackData[p];
+                filledCount += 1;
+              }
+            }
+
+            if (filledCount > 0) {
+              source = 'snapshot+database';
+            }
+          }
+        }
       } else {
         // 降级到旧的 Trend 表
         const trends = await getTrendsFromDB(platform || undefined);
@@ -135,6 +157,28 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('[GET /api/trends] failed:', error);
+    try {
+      const fallbackPlatform = parsePlatform(new URL(request.url).searchParams.get('platform'));
+      const fallbackData = fallbackPlatform
+        ? ({ [fallbackPlatform]: await fetchTrends(fallbackPlatform) } as Record<Platform, unknown[]>)
+        : await fetchAllTrends();
+      const hasData = PLATFORMS.some((p) => fallbackData[p]?.length > 0);
+
+      if (hasData) {
+        const now = new Date().toISOString();
+        return NextResponse.json({
+          success: true,
+          data: fallbackData,
+          snapshotAt: now,
+          updatedAt: now,
+          source: 'live-fallback',
+          hasData: true,
+        });
+      }
+    } catch (fallbackError) {
+      console.error('[GET /api/trends] live fallback failed:', fallbackError);
+    }
+
     return errorResponse(500, 'TRENDS_FETCH_FAILED', GENERIC_FETCH_ERROR_MESSAGE);
   }
 }

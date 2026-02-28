@@ -1,6 +1,6 @@
 import type { TrendItem } from '@/types/trend';
 
-const TIANAPI_BASE_URL = 'https://api.tianapi.com';
+const TIANAPI_BASE_URL = process.env.TIANAPI_BASE_URL || 'https://apis.tianapi.com';
 
 export interface TianApiConfig {
   key: string;
@@ -30,9 +30,15 @@ export async function fetchTianApi(config: TianApiConfig): Promise<TrendItem[]> 
 
   const result = await response.json();
 
-  if (result.code !== 200) {
-    throw new Error(`TianAPI error: ${result.msg || result.message}`);
+  const responseCode = Number(result?.code);
+  if (responseCode !== 200) {
+    throw new Error(`TianAPI error: ${result?.msg || result?.message || 'Unknown error'}`);
   }
 
-  return transform(result.newslist || result.list || []);
+  // TianAPI has multiple payload shapes:
+  // 1) { code, newslist: [...] }
+  // 2) { code, list: [...] }
+  // 3) { code, result: { list: [...] } }
+  const list = result?.result?.list || result?.newslist || result?.list || [];
+  return transform(list);
 }
