@@ -41,9 +41,9 @@ Each scraper exports a `fetch{Platform}` function returning `TrendItem[]`.
 
 ### Frontend (`src/app/` and `src/components/`)
 - Next.js App Router with React 19
-- Tailwind CSS ## Supported Platforms
+- Tailwind CSS for styling
 
-4 for styling
+## Supported Platforms
 
 | Platform | Data Source |
 |----------|-------------|

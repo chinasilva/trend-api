@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTrendsFromDB, formatTrendsForAPI, getLatestSnapshot, getAllTrendsByDate, getTrendsByDate } from '@/lib/db';
+import { getTrendsFromDB, formatTrendsForAPI, getLatestSnapshot, getAllTrendsByDate, getTrendsByDate as getTrendsByDateFromDb } from '@/lib/db';
 import { PLATFORMS, type Platform } from '@/types/trend';
 
 export const dynamic = 'force-dynamic';
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
       // 查询指定日期的数据
       if (platform) {
-        const trends = await getTrendsByDate(platform, date);
+        const trends = await getTrendsByDateFromDb(platform, date);
         data = { [platform]: trends } as Record<Platform, unknown[]>;
         snapshotAt = date.toISOString();
       } else {
