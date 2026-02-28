@@ -1,7 +1,25 @@
-import { PrismaClient, type Prisma } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { PLATFORM_CONFIGS, type Platform, type TrendItem } from '@/types/trend';
+
+const SNAPSHOT_TOLERANCE_MS = 60 * 1000; // 1 minute
+
+export interface TimelineItem {
+  snapshotAt: string;
+  count: number;
+  hasData: boolean;
+  source: 'snapshot';
+}
+
+export interface TimelinePagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+}
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -315,12 +333,11 @@ export async function getLatestSnapshot(platform?: Platform) {
   const snapshotAt = latestSnapshot.createdAt;
 
   // 获取同一时间点的所有快照
-  const tolerance = 60 * 1000; // 1分钟容差
   const snapshots = await prisma.snapshot.findMany({
     where: {
       createdAt: {
-        gte: new Date(snapshotAt.getTime() - tolerance),
-        lte: new Date(snapshotAt.getTime() + tolerance),
+        gte: new Date(snapshotAt.getTime() - SNAPSHOT_TOLERANCE_MS),
+        lte: new Date(snapshotAt.getTime() + SNAPSHOT_TOLERANCE_MS),
       },
       ...where,
     },
@@ -357,6 +374,158 @@ export async function getLatestSnapshot(platform?: Platform) {
   return { trends: result, snapshotAt: snapshotAt.toISOString() };
 }
 
+// 按快照时间点查询（用于时间线选择）
+export async function getTrendsBySnapshotAt(snapshotTime: Date, platform?: Platform) {
+  const where = platform ? { content: { source: { platform } } } : {};
+  const minuteStart = new Date(snapshotTime);
+  minuteStart.setUTCSeconds(0, 0);
+  const minuteEnd = new Date(minuteStart.getTime() + 60 * 1000);
+
+  let center = minuteStart;
+  let createdAtRange: { gte: Date; lt: Date } | { gte: Date; lte: Date } = {
+    gte: minuteStart,
+    lt: minuteEnd,
+  };
+
+  // 优先按分钟桶精确匹配；若用户传入非时间线时间点，再容错回退到邻近快照。
+  const exactHit = await prisma.snapshot.findFirst({
+    where: {
+      createdAt: createdAtRange,
+      ...where,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!exactHit) {
+    const nearestSnapshot = await prisma.snapshot.findFirst({
+      where: {
+        createdAt: {
+          gte: new Date(snapshotTime.getTime() - SNAPSHOT_TOLERANCE_MS),
+          lte: new Date(snapshotTime.getTime() + SNAPSHOT_TOLERANCE_MS),
+        },
+        ...where,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!nearestSnapshot) {
+      return { trends: {}, snapshotAt: null };
+    }
+
+    center = new Date(nearestSnapshot.createdAt);
+    center.setUTCSeconds(0, 0);
+    createdAtRange = {
+      gte: center,
+      lt: new Date(center.getTime() + 60 * 1000),
+    };
+  }
+
+  const snapshots = await prisma.snapshot.findMany({
+    where: {
+      createdAt: createdAtRange,
+      ...where,
+    },
+    include: {
+      content: {
+        include: {
+          source: true,
+        },
+      },
+    },
+    orderBy: [{ content: { source: { platform: 'asc' } } }, { rank: 'asc' }],
+  });
+
+  const result: Record<Platform, TrendItem[]> = {} as Record<Platform, TrendItem[]>;
+  for (const s of snapshots) {
+    const p = s.content.source.platform as Platform;
+    if (!result[p]) {
+      result[p] = [];
+    }
+    result[p].push({
+      title: s.content.title,
+      hotValue: s.hotValue ?? undefined,
+      url: s.content.url || undefined,
+      description: s.content.description ?? undefined,
+      rank: s.rank,
+      thumbnail: s.content.thumbnail ?? undefined,
+      extra: s.content.extra as Record<string, unknown> | undefined,
+    });
+  }
+
+  return { trends: result, snapshotAt: center.toISOString() };
+}
+
+function toDate(value: unknown) {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string') return new Date(value);
+  return null;
+}
+
+// 获取快照时间线（按分钟聚合分页）
+export async function getSnapshotTimeline(page = 1, pageSize = 20, platform?: Platform) {
+  const safePage = Math.max(1, Math.floor(page));
+  const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
+  const offset = (safePage - 1) * safePageSize;
+  const platformFilter = platform ? Prisma.sql`AND ts.platform = ${platform}` : Prisma.empty;
+
+  const timelineRows = await prisma.$queryRaw<Array<{ snapshot_at: Date | string; count: number }>>(
+    Prisma.sql`
+      SELECT date_trunc('minute', s."createdAt") AS snapshot_at, COUNT(*)::int AS count
+      FROM "Snapshot" s
+      JOIN "Content" c ON c.id = s."contentId"
+      JOIN "TrendSource" ts ON ts.id = c."sourceId"
+      WHERE 1=1
+      ${platformFilter}
+      GROUP BY 1
+      ORDER BY 1 DESC
+      OFFSET ${offset}
+      LIMIT ${safePageSize}
+    `
+  );
+
+  const totalRows = await prisma.$queryRaw<Array<{ total: number }>>(
+    Prisma.sql`
+      SELECT COUNT(*)::int AS total
+      FROM (
+        SELECT date_trunc('minute', s."createdAt")
+        FROM "Snapshot" s
+        JOIN "Content" c ON c.id = s."contentId"
+        JOIN "TrendSource" ts ON ts.id = c."sourceId"
+        WHERE 1=1
+        ${platformFilter}
+        GROUP BY 1
+      ) t
+    `
+  );
+
+  const total = Number(totalRows[0]?.total ?? 0);
+  const totalPages = total === 0 ? 0 : Math.ceil(total / safePageSize);
+
+  const items: TimelineItem[] = timelineRows
+    .map((row) => {
+      const date = toDate(row.snapshot_at);
+      if (!date || Number.isNaN(date.getTime())) return null;
+      return {
+        snapshotAt: date.toISOString(),
+        count: Number(row.count),
+        hasData: Number(row.count) > 0,
+        source: 'snapshot' as const,
+      };
+    })
+    .filter((item): item is TimelineItem => item !== null);
+
+  const pagination: TimelinePagination = {
+    page: safePage,
+    pageSize: safePageSize,
+    total,
+    totalPages,
+    hasPrev: safePage > 1,
+    hasNext: safePage < totalPages,
+  };
+
+  return { items, pagination };
+}
+
 // 按日期查询所有平台快照
 export async function getAllTrendsByDate(date: Date) {
   const startOfDay = new Date(date);
@@ -382,13 +551,12 @@ export async function getAllTrendsByDate(date: Date) {
 
   const snapshotAt = nearestSnapshot.createdAt;
 
-  // 获取同一时间点的所有快照（2分钟容差）
-  const tolerance = 60 * 1000;
+  // 获取同一时间点的所有快照
   const snapshots = await prisma.snapshot.findMany({
     where: {
       createdAt: {
-        gte: new Date(snapshotAt.getTime() - tolerance),
-        lte: new Date(snapshotAt.getTime() + tolerance),
+        gte: new Date(snapshotAt.getTime() - SNAPSHOT_TOLERANCE_MS),
+        lte: new Date(snapshotAt.getTime() + SNAPSHOT_TOLERANCE_MS),
       },
     },
     include: {
