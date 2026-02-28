@@ -1,64 +1,86 @@
 import { NextResponse } from 'next/server';
-import { fetchAllTrends } from '@/lib/scraper';
-import { saveSnapshot } from '@/lib/db';
-import { PLATFORMS } from '@/types/trend';
+import { getCache, setCache } from '@/lib/cache';
+import { saveTrends, saveSnapshot } from '@/lib/db';
+import { PLATFORMS, type Platform } from '@/types/trend';
 
 export const dynamic = 'force-dynamic';
 
+// POST /api/trends/sync - 触发爬取并保存快照
 export async function POST() {
   try {
-    // 爬取所有平台数据
-    const allTrends = await fetchAllTrends();
+    const results: Array<{
+      platform: Platform;
+      successCount: number;
+      failCount: number;
+      error?: string;
+    }> = [];
 
-    // 为每个平台保存快照
-    const results = await Promise.allSettled(
-      PLATFORMS.map(async (platform) => {
-        const trends = allTrends[platform];
-        if (!trends || trends.length === 0) {
-          return { platform, successCount: 0, failCount: 0, error: 'No data' };
+    // 并行获取所有平台数据
+    const promises = PLATFORMS.map(async (platform) => {
+      try {
+        // 先尝试从缓存获取
+        let data = getCache(platform);
+
+        if (!data) {
+          // 缓存未命中，爬取数据
+          const { fetchTrends } = await import('@/lib/scraper');
+          data = await fetchTrends(platform);
+          setCache(platform, data);
         }
 
+        // 保存到旧的 Trend 表（带去重）
         try {
-          const result = await saveSnapshot(platform, trends);
-          return { platform, ...result };
-        } catch (error) {
+          await saveTrends(platform, data);
+        } catch (dbError) {
+          console.error(`Failed to save trends for ${platform}:`, dbError);
+        }
+
+        // 保存快照（新功能）
+        try {
+          const snapshotResult = await saveSnapshot(platform, data);
           return {
             platform,
-            successCount: 0,
-            failCount: trends.length,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            successCount: snapshotResult.successCount,
+            failCount: snapshotResult.failCount,
+          };
+        } catch (snapshotError) {
+          console.error(`Failed to save snapshot for ${platform}:`, snapshotError);
+          return {
+            platform,
+            successCount: data.length,
+            failCount: 0,
           };
         }
-      })
-    );
-
-    // 统计结果
-    const platformResults = results.map((r) => {
-      if (r.status === 'fulfilled') {
-        return r.value;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return {
+          platform,
+          successCount: 0,
+          failCount: PLATFORMS.length,
+          error: errorMessage,
+        };
       }
-      return {
-        platform: 'unknown',
-        successCount: 0,
-        failCount: 0,
-        error: r.reason?.message || 'Unknown error',
-      };
     });
 
-    const totalSuccess = platformResults.reduce((sum, r) => sum + r.successCount, 0);
-    const totalFailed = platformResults.reduce((sum, r) => sum + r.failCount, 0);
-    const successPlatforms = platformResults.filter((r) => r.successCount > 0).length;
+    const allResults = await Promise.all(promises);
+    results.push(...allResults);
+
+    // 统计成功/失败
+    const totalSuccess = results.reduce((sum, r) => sum + r.successCount, 0);
+    const totalFailed = results.reduce((sum, r) => sum + r.failCount, 0);
+    const hasError = results.some(r => r.error);
 
     return NextResponse.json({
-      success: totalFailed === 0,
-      message: `Completed: ${successPlatforms}/${PLATFORMS.length} platforms, ${totalSuccess} items saved`,
+      success: !hasError,
+      message: hasError ? '部分平台爬取失败' : '数据爬取成功',
       data: {
-        platforms: platformResults,
+        platforms: results,
         total: {
-          success: totalSuccess,
-          failed: totalFailed,
+          successCount: totalSuccess,
+          failCount: totalFailed,
         },
       },
+      updatedAt: new Date().toISOString(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error';
