@@ -19,10 +19,10 @@
 | 微博 | TianAPI | 稳定可靠 |
 | 知乎 | TianAPI | 稳定可靠 |
 | 百度 | TianAPI | 稳定可靠 |
-| 微信/公众号 | TianAPI | 稳定可靠 |
+| 微信/公众号 | TianAPI (`wxhottopic` + `wxnew`) | 热点优先，文章精选兜底 |
 | B站 | TianAPI | 稳定可靠 |
-| 小红书 | DailyHotApi | 免费开源 |
-| 视频号 | DailyHotApi | 免费开源 |
+| 小红书 | ITAPI | 需配置 `ITAPI_KEY`，有免费额度与低价档 |
+| 视频号 | ITAPI(微信热榜替代) + DailyHotApi + TianAPI(`wxhottopic`/`wxnew`) | 优先 ITAPI，失败后自动降级 |
 
 ## 项目结构
 
@@ -55,6 +55,10 @@ trend-api/
 ```
 # TianAPI
 TIANAPI_KEY=your_api_key
+
+# ITAPI (小红书/视频号替代热榜)
+ITAPI_KEY=your_api_key
+# ITAPI_BASE_URL=https://api.itapi.cn
 
 # Database
 DATABASE_URL=postgresql://...

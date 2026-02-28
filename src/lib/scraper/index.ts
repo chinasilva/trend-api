@@ -41,5 +41,13 @@ export async function fetchAllTrends(): Promise<Record<Platform, TrendItem[]>> {
   return trends;
 }
 
-export { fetchDouyin, fetchWeibo, fetchZhihu, fetchBaidu, fetchWeixin, fetchBilibili } from './tianapi';
+export {
+  fetchDouyin,
+  fetchWeibo,
+  fetchZhihu,
+  fetchBaidu,
+  fetchWeixin,
+  fetchWeixinArticle,
+  fetchBilibili,
+} from './tianapi';
 export { fetchXiaohongshu, fetchWeixinvideo } from './dailyhot';
