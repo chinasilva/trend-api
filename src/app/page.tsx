@@ -17,18 +17,81 @@ interface TrendsData {
   errorCode?: string;
 }
 
+interface TimelineItem {
+  snapshotAt: string;
+  count: number;
+  hasData: boolean;
+  source: 'snapshot';
+}
+
+interface TimelinePagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+}
+
+interface TimelineData {
+  items: TimelineItem[];
+  pagination: TimelinePagination;
+}
+
+interface TimelineResponse {
+  success: boolean;
+  data?: TimelineData;
+  error?: string;
+  message?: string;
+}
+
+function toSnapshotKey(snapshotAt: string | null | undefined) {
+  if (!snapshotAt) {
+    return null;
+  }
+
+  const date = new Date(snapshotAt);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  date.setUTCSeconds(0, 0);
+  return date.toISOString();
+}
+
 export default function Home() {
   const [activePlatform, setActivePlatform] = useState<Platform | 'all'>('all');
   const [trendsData, setTrendsData] = useState<TrendsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
+  const [timelinePagination, setTimelinePagination] = useState<TimelinePagination | null>(null);
+  const [selectedSnapshotKey, setSelectedSnapshotKey] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchTrends() {
-      setLoading(true);
-      setError(null);
+    async function fetchTrends(options?: { snapshotAt?: string; initial?: boolean }) {
+      const isInitial = options?.initial ?? false;
+      const snapshotAt = options?.snapshotAt;
+
+      if (isInitial) {
+        setLoading(true);
+        setError(null);
+      } else {
+        setSnapshotLoading(true);
+        setTimelineError(null);
+      }
+
       try {
-        const response = await fetch('/api/trends');
+        const params = new URLSearchParams();
+        if (snapshotAt) {
+          params.set('snapshotAt', snapshotAt);
+        }
+
+        const query = params.toString();
+        const response = await fetch(`/api/trends${query ? `?${query}` : ''}`);
         if (!response.ok) {
           let errorMessage = `Failed to fetch trends (${response.status})`;
           try {
@@ -44,14 +107,57 @@ export default function Home() {
           throw new Error(data.message || data.error || 'Failed to fetch trends');
         }
         setTrendsData(data);
+        setSelectedSnapshotKey(toSnapshotKey(data.snapshotAt));
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred');
+        const message = err instanceof Error ? err.message : 'An error occurred';
+        if (isInitial) {
+          setError(message);
+        } else {
+          setTimelineError(message);
+        }
       } finally {
-        setLoading(false);
+        if (isInitial) {
+          setLoading(false);
+        } else {
+          setSnapshotLoading(false);
+        }
       }
     }
 
-    fetchTrends();
+    async function fetchTimeline(page: number) {
+      setTimelineLoading(true);
+      setTimelineError(null);
+      try {
+        const response = await fetch(`/api/trends/timeline?page=${page}&pageSize=12`);
+        if (!response.ok) {
+          let errorMessage = `Failed to fetch timeline (${response.status})`;
+          try {
+            const payload = await response.json();
+            errorMessage = payload.message || payload.error || errorMessage;
+          } catch {
+            // no-op: keep fallback error message
+          }
+          throw new Error(errorMessage);
+        }
+
+        const payload = await response.json() as TimelineResponse;
+        if (!payload.success || !payload.data) {
+          throw new Error(payload.message || payload.error || 'Failed to fetch timeline');
+        }
+
+        setTimelineItems(payload.data.items);
+        setTimelinePagination(payload.data.pagination);
+      } catch (err) {
+        setTimelineError(err instanceof Error ? err.message : 'Failed to fetch timeline');
+      } finally {
+        setTimelineLoading(false);
+      }
+    }
+
+    void Promise.all([
+      fetchTrends({ initial: true }),
+      fetchTimeline(1),
+    ]);
   }, []);
 
   const formatDate = (dateString: string) => {
@@ -92,6 +198,74 @@ export default function Home() {
     );
   }
 
+  const handleSelectSnapshot = async (snapshotAt: string) => {
+    const incomingSnapshotKey = toSnapshotKey(snapshotAt);
+    if (!incomingSnapshotKey || incomingSnapshotKey === selectedSnapshotKey || snapshotLoading) {
+      return;
+    }
+
+    setTimelineError(null);
+    setSnapshotLoading(true);
+    try {
+      const params = new URLSearchParams({ snapshotAt });
+      const response = await fetch(`/api/trends?${params.toString()}`);
+      if (!response.ok) {
+        let errorMessage = `Failed to fetch trends (${response.status})`;
+        try {
+          const payload = await response.json();
+          errorMessage = payload.message || payload.error || errorMessage;
+        } catch {
+          // no-op: keep fallback error message
+        }
+        throw new Error(errorMessage);
+      }
+      const data = await response.json() as TrendsData;
+      if (!data.success) {
+        throw new Error(data.message || data.error || 'Failed to fetch trends');
+      }
+      setTrendsData(data);
+      setSelectedSnapshotKey(toSnapshotKey(data.snapshotAt || snapshotAt));
+    } catch (err) {
+      setTimelineError(err instanceof Error ? err.message : 'Failed to switch snapshot');
+    } finally {
+      setSnapshotLoading(false);
+    }
+  };
+
+  const handleTimelinePageChange = async (nextPage: number) => {
+    if (timelineLoading) {
+      return;
+    }
+
+    setTimelineLoading(true);
+    setTimelineError(null);
+    try {
+      const response = await fetch(`/api/trends/timeline?page=${nextPage}&pageSize=12`);
+      if (!response.ok) {
+        let errorMessage = `Failed to fetch timeline (${response.status})`;
+        try {
+          const payload = await response.json();
+          errorMessage = payload.message || payload.error || errorMessage;
+        } catch {
+          // no-op: keep fallback error message
+        }
+        throw new Error(errorMessage);
+      }
+
+      const payload = await response.json() as TimelineResponse;
+      if (!payload.success || !payload.data) {
+        throw new Error(payload.message || payload.error || 'Failed to fetch timeline');
+      }
+
+      setTimelineItems(payload.data.items);
+      setTimelinePagination(payload.data.pagination);
+    } catch (err) {
+      setTimelineError(err instanceof Error ? err.message : 'Failed to fetch timeline');
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
   const renderContent = () => {
     if (!trendsData) return null;
 
@@ -131,6 +305,76 @@ export default function Home() {
               : '-'}
           </p>
         </header>
+
+        <section className="mb-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              历史时间线
+            </h2>
+            {snapshotLoading && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">切换中...</span>
+            )}
+          </div>
+
+          {timelineError && (
+            <p className="text-sm text-red-500 mb-3">{timelineError}</p>
+          )}
+
+          {!timelineError && timelineItems.length === 0 && (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {timelineLoading ? '加载时间线中...' : '暂无历史快照'}
+            </p>
+          )}
+
+          {timelineItems.length > 0 && (
+            <>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {timelineItems.map((item) => {
+                  const active = toSnapshotKey(item.snapshotAt) === selectedSnapshotKey;
+                  return (
+                    <button
+                      key={item.snapshotAt}
+                      onClick={() => void handleSelectSnapshot(item.snapshotAt)}
+                      disabled={snapshotLoading}
+                      className={`text-left rounded-md border px-3 py-2 transition-colors ${
+                        active
+                          ? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900'
+                          : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800'
+                      } ${snapshotLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    >
+                      <p className="text-sm font-medium">{formatDate(item.snapshotAt)}</p>
+                      <p className="text-xs opacity-80 mt-1">{item.count} 条记录</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {timelinePagination && (
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    第 {timelinePagination.page} / {Math.max(timelinePagination.totalPages, 1)} 页
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => void handleTimelinePageChange(timelinePagination.page - 1)}
+                      disabled={!timelinePagination.hasPrev || timelineLoading}
+                      className="px-3 py-1.5 rounded-md text-sm border border-gray-300 text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-300"
+                    >
+                      上一页
+                    </button>
+                    <button
+                      onClick={() => void handleTimelinePageChange(timelinePagination.page + 1)}
+                      disabled={!timelinePagination.hasNext || timelineLoading}
+                      className="px-3 py-1.5 rounded-md text-sm border border-gray-300 text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-300"
+                    >
+                      下一页
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
 
         <PlatformTabs
           activePlatform={activePlatform}

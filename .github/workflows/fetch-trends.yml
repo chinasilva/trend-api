@@ -14,7 +14,8 @@ jobs:
         id: fetch-trends
         run: |
           # 触发爬取并保存快照
-          RESPONSE=$(curl -s -X POST "${{ secrets.API_URL }}/api/trends/sync")
+          RESPONSE=$(curl -s -X POST "${{ secrets.API_URL }}/api/trends/sync" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
           echo "response=$RESPONSE" >> $GITHUB_OUTPUT
 
       - name: Parse and log results
@@ -47,8 +48,8 @@ jobs:
             TOTAL=$((TOTAL + 1))
 
             # 从新的响应格式中获取成功数量
-            SUCCESS=$(echo "$RESPONSE" | jq -r ".data.platforms[] | select(.platform == \"$platform\") | .successCount // 0")
-            FAILED=$(echo "$RESPONSE" | jq -r ".data.platforms[] | select(.platform == \"$platform\") | .failCount // 0")
+            SUCCESS=$(echo "$RESPONSE" | jq -r --arg platform "$platform" '((.data.platforms // []) | map(select(.platform == $platform)) | .[0].successCount) // 0')
+            FAILED=$(echo "$RESPONSE" | jq -r --arg platform "$platform" '((.data.platforms // []) | map(select(.platform == $platform)) | .[0].failCount) // 0')
 
             # 判断成功/失败：successCount > 0 表示成功
             if [ "$SUCCESS" = "0" ] && [ "$FAILED" = "0" ]; then

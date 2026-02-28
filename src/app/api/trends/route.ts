@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTrendsFromDB, formatTrendsForAPI, getLatestSnapshot, getAllTrendsByDate, getTrendsByDate as getTrendsByDateFromDb } from '@/lib/db';
+import {
+  getTrendsFromDB,
+  formatTrendsForAPI,
+  getLatestSnapshot,
+  getAllTrendsByDate,
+  getTrendsByDate as getTrendsByDateFromDb,
+  getTrendsBySnapshotAt,
+} from '@/lib/db';
 import { PLATFORMS, type Platform } from '@/types/trend';
 
 export const dynamic = 'force-dynamic';
@@ -22,17 +29,48 @@ function errorResponse(status: number, errorCode: string, message: string) {
   );
 }
 
+function parsePlatform(platform: string | null): Platform | null {
+  if (!platform) {
+    return null;
+  }
+
+  if (!PLATFORMS.includes(platform as Platform)) {
+    return null;
+  }
+
+  return platform as Platform;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get('date');
-    const platform = searchParams.get('platform') as Platform | null;
+    const snapshotAtParam = searchParams.get('snapshotAt');
+    const platform = parsePlatform(searchParams.get('platform'));
 
     let data: Record<Platform, unknown[]>;
     let snapshotAt: string | null;
     let source: string;
 
-    if (dateParam) {
+    if (searchParams.get('platform') && !platform) {
+      return errorResponse(400, 'INVALID_PLATFORM', 'Invalid platform parameter.');
+    }
+
+    if (snapshotAtParam) {
+      const parsedSnapshotAt = new Date(snapshotAtParam);
+      if (isNaN(parsedSnapshotAt.getTime())) {
+        return errorResponse(
+          400,
+          'INVALID_SNAPSHOT_AT',
+          'Invalid snapshotAt format. Use ISO datetime like 2026-02-28T06:30:00.000Z'
+        );
+      }
+
+      const snapshotResult = await getTrendsBySnapshotAt(parsedSnapshotAt, platform || undefined);
+      data = snapshotResult.trends as Record<Platform, unknown[]>;
+      snapshotAt = snapshotResult.snapshotAt;
+      source = 'timeline';
+    } else if (dateParam) {
       // 解析日期参数
       const date = new Date(dateParam);
       if (isNaN(date.getTime())) {

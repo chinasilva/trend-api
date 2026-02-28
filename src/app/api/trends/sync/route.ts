@@ -6,8 +6,34 @@ import { PLATFORMS, type Platform } from '@/types/trend';
 export const dynamic = 'force-dynamic';
 
 // POST /api/trends/sync - 触发爬取并保存快照
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const expectedSecret = process.env.CRON_SECRET;
+    if (!expectedSecret) {
+      return NextResponse.json(
+        {
+          success: false,
+          errorCode: 'CRON_SECRET_NOT_CONFIGURED',
+          message: 'CRON_SECRET is not configured.',
+        },
+        { status: 500 }
+      );
+    }
+
+    const secret = request.headers.get('x-cron-secret');
+    if (!secret || secret !== expectedSecret) {
+      return NextResponse.json(
+        {
+          success: false,
+          errorCode: 'UNAUTHORIZED',
+          message: 'Unauthorized request.',
+        },
+        { status: 401 }
+      );
+    }
+
+    const syncSnapshotAt = new Date();
+
     const results: Array<{
       platform: Platform;
       fetchedCount: number;
@@ -42,7 +68,7 @@ export async function POST() {
 
         // 保存快照（新功能）
         try {
-          const snapshotResult = await saveSnapshot(platform, data);
+          const snapshotResult = await saveSnapshot(platform, data, syncSnapshotAt);
           return {
             platform,
             fetchedCount: data.length,
@@ -82,7 +108,7 @@ export async function POST() {
     const totalFetched = results.reduce((sum, r) => sum + r.fetchedCount, 0);
     const totalSuccess = results.reduce((sum, r) => sum + r.successCount, 0);
     const totalFailed = results.reduce((sum, r) => sum + r.failCount, 0);
-    const hasError = results.some((r) => r.error || r.dbError || r.snapshotError);
+    const hasError = results.some((r) => r.error || r.dbError || r.snapshotError || r.failCount > 0);
 
     return NextResponse.json({
       success: !hasError,
