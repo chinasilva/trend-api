@@ -20,6 +20,12 @@ const DEFAULT_PROFILE: AccountProfileInput = {
   preferredLength: 1800,
 };
 
+interface PrismaErrorLike {
+  code?: string;
+  meta?: Record<string, unknown>;
+  message?: string;
+}
+
 export interface AccountListItem {
   id: string;
   name: string;
@@ -209,6 +215,58 @@ function buildDefaultProfile(params: {
   };
 }
 
+function isMissingProfileStorageError(error: unknown) {
+  const prismaError = error as PrismaErrorLike | undefined;
+  const message = prismaError?.message || '';
+  const table = typeof prismaError?.meta?.table === 'string' ? prismaError.meta.table : '';
+  const combined = `${table} ${message}`;
+
+  if (prismaError?.code === 'P2021' && /(AccountProfile|AccountProfileVersion)/.test(combined)) {
+    return true;
+  }
+
+  return /table .*AccountProfile/i.test(message) || /table .*AccountProfileVersion/i.test(message);
+}
+
+async function getAccountWithCategories(accountId: string) {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    include: {
+      categories: {
+        include: {
+          category: true,
+        },
+      },
+    },
+  });
+
+  if (!account) {
+    throw new Error(`Account not found: ${accountId}`);
+  }
+
+  return account;
+}
+
+function toFallbackProfileData(accountId: string, input: AccountProfileInput): AccountProfileData {
+  const now = new Date().toISOString();
+  return {
+    id: `fallback-${accountId}`,
+    accountId,
+    ...sanitizeProfileInput(input),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function buildFallbackProfileData(accountId: string): Promise<AccountProfileData> {
+  const account = await getAccountWithCategories(accountId);
+  const input = buildDefaultProfile({
+    accountName: account.name,
+    categoryNames: account.categories.map((item) => item.category.name),
+  });
+  return toFallbackProfileData(accountId, input);
+}
+
 async function persistVersion(
   tx: Prisma.TransactionClient,
   profile: {
@@ -288,56 +346,49 @@ export function mergeProfile(
 }
 
 export async function getOrCreateAccountProfile(accountId: string): Promise<AccountProfileData> {
-  const existed = await prisma.accountProfile.findUnique({
-    where: {
-      accountId,
-    },
-  });
-
-  if (existed) {
-    return toProfileData(existed);
-  }
-
-  const account = await prisma.account.findUnique({
-    where: { id: accountId },
-    include: {
-      categories: {
-        include: {
-          category: true,
-        },
-      },
-    },
-  });
-
-  if (!account) {
-    throw new Error(`Account not found: ${accountId}`);
-  }
-
-  const profileInput = buildDefaultProfile({
-    accountName: account.name,
-    categoryNames: account.categories.map((item) => item.category.name),
-  });
-
-  const profile = await prisma.$transaction(async (tx) => {
-    const created = await tx.accountProfile.create({
-      data: {
-        accountId: account.id,
-        audience: profileInput.audience,
-        tone: profileInput.tone,
-        growthGoal: profileInput.growthGoal,
-        painPoints: profileInput.painPoints as Prisma.InputJsonValue,
-        contentPromise: profileInput.contentPromise,
-        forbiddenTopics: profileInput.forbiddenTopics as Prisma.InputJsonValue,
-        ctaStyle: profileInput.ctaStyle,
-        preferredLength: profileInput.preferredLength,
+  try {
+    const existed = await prisma.accountProfile.findUnique({
+      where: {
+        accountId,
       },
     });
 
-    await persistVersion(tx, created);
-    return created;
-  });
+    if (existed) {
+      return toProfileData(existed);
+    }
 
-  return toProfileData(profile);
+    const account = await getAccountWithCategories(accountId);
+    const profileInput = buildDefaultProfile({
+      accountName: account.name,
+      categoryNames: account.categories.map((item) => item.category.name),
+    });
+
+    const profile = await prisma.$transaction(async (tx) => {
+      const created = await tx.accountProfile.create({
+        data: {
+          accountId: account.id,
+          audience: profileInput.audience,
+          tone: profileInput.tone,
+          growthGoal: profileInput.growthGoal,
+          painPoints: profileInput.painPoints as Prisma.InputJsonValue,
+          contentPromise: profileInput.contentPromise,
+          forbiddenTopics: profileInput.forbiddenTopics as Prisma.InputJsonValue,
+          ctaStyle: profileInput.ctaStyle,
+          preferredLength: profileInput.preferredLength,
+        },
+      });
+
+      await persistVersion(tx, created);
+      return created;
+    });
+
+    return toProfileData(profile);
+  } catch (error) {
+    if (isMissingProfileStorageError(error)) {
+      return buildFallbackProfileData(accountId);
+    }
+    throw error;
+  }
 }
 
 export async function getAccountProfileWithVersions(accountId: string): Promise<{
@@ -345,21 +396,30 @@ export async function getAccountProfileWithVersions(accountId: string): Promise<
   versions: AccountProfileVersionItem[];
 }> {
   const profile = await getOrCreateAccountProfile(accountId);
+  try {
+    const versions = await prisma.accountProfileVersion.findMany({
+      where: {
+        accountId,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: MAX_PROFILE_HISTORY,
+    });
 
-  const versions = await prisma.accountProfileVersion.findMany({
-    where: {
-      accountId,
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-    take: MAX_PROFILE_HISTORY,
-  });
-
-  return {
-    profile,
-    versions: versions.map(toVersionItem),
-  };
+    return {
+      profile,
+      versions: versions.map(toVersionItem),
+    };
+  } catch (error) {
+    if (isMissingProfileStorageError(error)) {
+      return {
+        profile,
+        versions: [],
+      };
+    }
+    throw error;
+  }
 }
 
 export async function listAccounts(options?: { includeInactive?: boolean }): Promise<AccountListItem[]> {
@@ -480,58 +540,74 @@ export async function updateAccountProfile(
 ): Promise<{ profile: AccountProfileData; versions: AccountProfileVersionItem[] }> {
   const existing = await getOrCreateAccountProfile(accountId);
   const next = mergeProfile(existing, input);
+  try {
+    const profile = await prisma.$transaction(async (tx) => {
+      const updated = await tx.accountProfile.update({
+        where: {
+          accountId,
+        },
+        data: {
+          audience: next.audience,
+          tone: next.tone,
+          growthGoal: next.growthGoal,
+          painPoints: next.painPoints as Prisma.InputJsonValue,
+          contentPromise: next.contentPromise,
+          forbiddenTopics: next.forbiddenTopics as Prisma.InputJsonValue,
+          ctaStyle: next.ctaStyle,
+          preferredLength: next.preferredLength,
+        },
+      });
 
-  const profile = await prisma.$transaction(async (tx) => {
-    const updated = await tx.accountProfile.update({
+      await persistVersion(tx, updated);
+      return updated;
+    });
+
+    const versions = await prisma.accountProfileVersion.findMany({
       where: {
         accountId,
       },
-      data: {
-        audience: next.audience,
-        tone: next.tone,
-        growthGoal: next.growthGoal,
-        painPoints: next.painPoints as Prisma.InputJsonValue,
-        contentPromise: next.contentPromise,
-        forbiddenTopics: next.forbiddenTopics as Prisma.InputJsonValue,
-        ctaStyle: next.ctaStyle,
-        preferredLength: next.preferredLength,
+      orderBy: {
+        createdAt: 'desc',
       },
+      take: MAX_PROFILE_HISTORY,
     });
 
-    await persistVersion(tx, updated);
-    return updated;
-  });
-
-  const versions = await prisma.accountProfileVersion.findMany({
-    where: {
-      accountId,
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-    take: MAX_PROFILE_HISTORY,
-  });
-
-  return {
-    profile: toProfileData(profile),
-    versions: versions.map(toVersionItem),
-  };
+    return {
+      profile: toProfileData(profile),
+      versions: versions.map(toVersionItem),
+    };
+  } catch (error) {
+    if (isMissingProfileStorageError(error)) {
+      return {
+        profile: toFallbackProfileData(accountId, next),
+        versions: [],
+      };
+    }
+    throw error;
+  }
 }
 
 export async function rollbackAccountProfile(
   accountId: string,
   versionId: string
 ): Promise<{ profile: AccountProfileData; versions: AccountProfileVersionItem[] }> {
-  const version = await prisma.accountProfileVersion.findUnique({
-    where: {
-      id: versionId,
-    },
-  });
+  try {
+    const version = await prisma.accountProfileVersion.findUnique({
+      where: {
+        id: versionId,
+      },
+    });
 
-  if (!version || version.accountId !== accountId) {
-    throw new Error('Profile version not found.');
+    if (!version || version.accountId !== accountId) {
+      throw new Error('Profile version not found.');
+    }
+
+    const snapshot = sanitizeProfileInput(version.profileSnapshot as Partial<AccountProfileInput>);
+    return updateAccountProfile(accountId, snapshot);
+  } catch (error) {
+    if (isMissingProfileStorageError(error)) {
+      throw new Error('Profile version rollback is unavailable in current database.');
+    }
+    throw error;
   }
-
-  const snapshot = sanitizeProfileInput(version.profileSnapshot as Partial<AccountProfileInput>);
-  return updateAccountProfile(accountId, snapshot);
 }
