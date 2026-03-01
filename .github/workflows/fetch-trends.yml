@@ -51,7 +51,7 @@ jobs:
           fi
 
           # 平台名称映射
-          PLATFORM_NAMES='{"douyin":"抖音","weibo":"微博","zhihu":"知乎","baidu":"百度","weixin":"微信","bilibili":"B站","xiaohongshu":"小红书","weixinvideo":"视频号"}'
+          PLATFORM_NAMES='{"douyin":"抖音","weibo":"微博","zhihu":"知乎","baidu":"百度","networkhot":"全网热搜","weixin":"微信","weixinarticle":"微信文章","bilibili":"B站","xiaohongshu":"小红书","weixinvideo":"视频号"}'
 
           # 统计变量
           TOTAL=0
@@ -59,7 +59,7 @@ jobs:
           FAILED_COUNT=0
 
           # 遍历每个平台
-          for platform in douyin weibo zhihu baidu weixin bilibili xiaohongshu weixinvideo; do
+          for platform in douyin weibo zhihu baidu networkhot weixin weixinarticle bilibili xiaohongshu weixinvideo; do
             PLATFORM_NAME=$(echo "$PLATFORM_NAMES" | jq -r ".$platform")
             TOTAL=$((TOTAL + 1))
 

@@ -19,7 +19,9 @@
 | 微博 | TianAPI | 稳定可靠 |
 | 知乎 | TianAPI | 稳定可靠 |
 | 百度 | TianAPI | 稳定可靠 |
+| 全网热搜 | TianAPI (`networkhot`) | 独立榜单 |
 | 微信/公众号 | TianAPI (`wxhottopic` + `wxnew`) | 热点优先，文章精选兜底 |
+| 微信文章精选 | TianAPI (`wxnew`) | 可单独查询 |
 | B站 | TianAPI | 稳定可靠 |
 | 小红书 | ITAPI | 需配置 `ITAPI_KEY`，有免费额度与低价档 |
 | 视频号 | ITAPI(微信热榜替代) + DailyHotApi + TianAPI(`wxhottopic`/`wxnew`) | 优先 ITAPI，失败后自动降级 |
@@ -71,6 +73,7 @@ VERCEL_URL=...
 
 - `GET /api/trends` - 获取所有平台热榜
 - `GET /api/trends/[platform]` - 获取特定平台热榜
+  - 示例: `networkhot`、`weixinarticle`
 
 ## 开发命令
 

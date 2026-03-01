@@ -1,5 +1,10 @@
 import { defineConfig } from '@playwright/test';
 
+const webPort = Number(process.env.PLAYWRIGHT_WEB_PORT || 3100);
+const webBaseUrl = `http://127.0.0.1:${webPort}`;
+const browserName = (process.env.PLAYWRIGHT_BROWSER || 'webkit') as 'chromium' | 'firefox' | 'webkit';
+const testDistDir = process.env.PLAYWRIGHT_NEXT_DIST_DIR || '.next-playwright';
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -8,13 +13,14 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'list',
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: webBaseUrl,
+    browserName,
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'npm run dev',
-    url: 'http://127.0.0.1:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
+    command: `NEXT_DIST_DIR=${testDistDir} npm run build && NEXT_DIST_DIR=${testDistDir} PORT=${webPort} npm run start`,
+    url: webBaseUrl,
+    reuseExistingServer: false,
+    timeout: 240000,
   },
 });

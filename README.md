@@ -21,6 +21,17 @@
 9. 发布任务：`POST /api/publish/wechat`
 10. 发布重试：`POST /api/publish/jobs/:id/retry`
 
+## 热点平台查询
+
+支持的热点平台包含：
+`douyin`、`weibo`、`zhihu`、`baidu`、`networkhot`、`weixin`、`weixinarticle`、`bilibili`、`xiaohongshu`、`weixinvideo`。
+
+示例：
+```bash
+curl http://localhost:3000/api/trends/networkhot
+curl http://localhost:3000/api/trends/weixinarticle
+```
+
 ## UI 使用方式
 
 首页提供双模式切换：
