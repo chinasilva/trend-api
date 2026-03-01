@@ -4,7 +4,9 @@ export type Platform =
   | 'weibo'
   | 'zhihu'
   | 'baidu'
+  | 'networkhot'
   | 'weixin'
+  | 'weixinarticle'
   | 'bilibili'
   | 'xiaohongshu'
   | 'weixinvideo';
@@ -15,7 +17,9 @@ export const PLATFORMS: Platform[] = [
   'weibo',
   'zhihu',
   'baidu',
+  'networkhot',
   'weixin',
+  'weixinarticle',
   'bilibili',
   'xiaohongshu',
   'weixinvideo',
@@ -35,7 +39,9 @@ export const PLATFORM_CONFIGS: Record<Platform, PlatformConfig> = {
   weibo: { platform: 'weibo', name: '微博', icon: '📱', dataSource: 'tianapi' },
   zhihu: { platform: 'zhihu', name: '知乎', icon: '💬', dataSource: 'tianapi' },
   baidu: { platform: 'baidu', name: '百度', icon: '🔍', dataSource: 'tianapi' },
+  networkhot: { platform: 'networkhot', name: '全网热搜', icon: '🌐', dataSource: 'tianapi' },
   weixin: { platform: 'weixin', name: '微信', icon: '💙', dataSource: 'tianapi' },
+  weixinarticle: { platform: 'weixinarticle', name: '微信文章', icon: '📰', dataSource: 'tianapi' },
   bilibili: { platform: 'bilibili', name: 'B站', icon: '📺', dataSource: 'custom' },
   xiaohongshu: { platform: 'xiaohongshu', name: '小红书', icon: '📕', dataSource: 'custom' },
   weixinvideo: { platform: 'weixinvideo', name: '视频号', icon: '🎬', dataSource: 'custom' },
