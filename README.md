@@ -15,6 +15,9 @@
 6. 草稿重生：`POST /api/drafts/:id/regenerate`
 7. 配图占位规划：`POST /api/drafts/:id/assets/plan`
 8. 账号定位读取/更新/回滚：
+   - `GET /api/accounts`
+   - `POST /api/accounts`
+   - `PATCH /api/accounts/:id`
    - `GET /api/accounts/:id/profile`
    - `PUT /api/accounts/:id/profile`
    - `POST /api/accounts/:id/profile/rollback`
@@ -40,13 +43,14 @@ curl http://localhost:3000/api/trends/weixinarticle
 
 内容生产模式操作顺序：
 1. 输入 `PIPELINE_API_SECRET` 与 `PIPELINE_SYNC_SECRET`
-2. 点击“同步机会”
+2. 打开“账号定位设置”页创建账号（首版支持新增、编辑、激活/停用）
 3. 在“账号定位”卡片确认并保存账号策略（全局生效）
-4. 在机会列表点击“生成草稿”
-5. 对当前草稿可执行“重新生成”获取全新版本
-6. 人工满意后点击“生成配图占位”
-7. 在草稿区域点击“提交发布任务”
-8. 在发布任务区域查看状态并按需重试
+4. 返回首页点击“同步机会”
+5. 在机会列表点击“生成草稿”
+6. 对当前草稿可执行“重新生成”获取全新版本
+7. 人工满意后点击“生成配图占位”
+8. 在草稿区域点击“提交发布任务”
+9. 在发布任务区域查看状态并按需重试
 
 ## 微信个人号限制说明
 

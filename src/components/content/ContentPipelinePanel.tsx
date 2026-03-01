@@ -182,7 +182,7 @@ export default function ContentPipelinePanel() {
       if (items.length === 0) {
         setBanner({
           type: 'info',
-          text: '当前没有可用账号。请先在 Prisma Studio 创建 Account，再配置账号定位。',
+          text: '当前没有可用账号。请先前往账号定位设置页创建账号，再返回本页继续内容生产。',
         });
       }
     } catch (error) {
@@ -654,7 +654,7 @@ export default function ContentPipelinePanel() {
 
           {accounts.length === 0 && (
             <p className="mb-3 text-xs text-amber-700 dark:text-amber-300">
-              尚未配置账号。可通过 `npm run db:studio` 在 `Account` 表新增账号后刷新本页。
+              尚未配置账号。请先前往“账号定位设置”页创建账号（需 `PIPELINE_API_SECRET`），保存后刷新本页。
             </p>
           )}
 

@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
 import { requireSecretAuth } from '@/lib/pipeline/auth';
-import { createAccount, listAccounts } from '@/lib/pipeline/profile-service';
+import { updateAccount } from '@/lib/pipeline/profile-service';
 import type { AccountMutationInput } from '@/lib/pipeline/profile-service';
 
 export const dynamic = 'force-dynamic';
+
+interface RouteParams {
+  params: Promise<{
+    id: string;
+  }>;
+}
 
 function parseBody(raw: unknown): AccountMutationInput {
   if (!raw || typeof raw !== 'object') {
@@ -24,7 +30,7 @@ function parseBody(raw: unknown): AccountMutationInput {
   };
 }
 
-export async function GET(request: Request) {
+export async function PATCH(request: Request, { params }: RouteParams) {
   try {
     const authError = requireSecretAuth(request, {
       envKey: 'PIPELINE_API_SECRET',
@@ -33,63 +39,42 @@ export async function GET(request: Request) {
       return authError;
     }
 
-    const searchParams = new URL(request.url).searchParams;
-    const includeInactive = ['1', 'true', 'yes'].includes(
-      (searchParams.get('includeInactive') || '').toLowerCase()
-    );
-
-    const accounts = await listAccounts({ includeInactive });
-    return NextResponse.json({
-      success: true,
-      data: accounts,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json(
-      {
-        success: false,
-        errorCode: 'ACCOUNT_LIST_FAILED',
-        message,
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const authError = requireSecretAuth(request, {
-      envKey: 'PIPELINE_API_SECRET',
-    });
-    if (authError) {
-      return authError;
-    }
-
+    const { id } = await params;
     let body: unknown = {};
+
     try {
       body = (await request.json()) as unknown;
     } catch {
       body = {};
     }
 
-    const account = await createAccount(parseBody(body));
-    return NextResponse.json(
-      {
-        success: true,
-        data: account,
-      },
-      { status: 201 }
-    );
+    const account = await updateAccount(id, parseBody(body));
+    return NextResponse.json({
+      success: true,
+      data: account,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     const isValidationError = message.startsWith('Validation failed:');
+    const isNotFound = message.includes('Account not found');
+    let errorCode = 'ACCOUNT_UPDATE_FAILED';
+    let status = 500;
+
+    if (isValidationError) {
+      errorCode = 'ACCOUNT_VALIDATION_FAILED';
+      status = 400;
+    } else if (isNotFound) {
+      errorCode = 'ACCOUNT_NOT_FOUND';
+      status = 404;
+    }
+
     return NextResponse.json(
       {
         success: false,
-        errorCode: isValidationError ? 'ACCOUNT_VALIDATION_FAILED' : 'ACCOUNT_CREATE_FAILED',
+        errorCode,
         message,
       },
-      { status: isValidationError ? 400 : 500 }
+      { status }
     );
   }
 }

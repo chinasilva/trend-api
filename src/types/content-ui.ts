@@ -194,6 +194,25 @@ export interface PublishJobResult {
   errorMessage?: string | null;
 }
 
+export interface AccountListItem {
+  id: string;
+  name: string;
+  platform: string;
+  description?: string | null;
+  isActive: boolean;
+  autoPublish: boolean;
+  dailyLimit: number;
+}
+
+export interface AccountMutationInput {
+  name?: string;
+  platform?: string;
+  description?: string;
+  isActive?: boolean;
+  autoPublish?: boolean;
+  dailyLimit?: number;
+}
+
 export const OPPORTUNITY_STATUS_OPTIONS: OpportunityStatus[] = [
   'NEW',
   'SELECTED',

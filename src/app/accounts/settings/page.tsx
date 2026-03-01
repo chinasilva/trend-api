@@ -1,14 +1,30 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  createAccount,
   getAccountProfile,
   listAccounts,
   rollbackAccountProfile,
+  updateAccount,
   updateAccountProfile,
 } from '@/lib/client/pipeline-api';
-import type { AccountProfileInput, AccountProfileVersionItem } from '@/types/content-ui';
+import type {
+  AccountListItem,
+  AccountMutationInput,
+  AccountProfileInput,
+  AccountProfileVersionItem,
+} from '@/types/content-ui';
+
+interface AccountFormState {
+  name: string;
+  platform: string;
+  description: string;
+  isActive: boolean;
+  autoPublish: boolean;
+  dailyLimit: number;
+}
 
 interface ProfileFormState {
   audience: string;
@@ -21,7 +37,16 @@ interface ProfileFormState {
   preferredLength: number;
 }
 
-const EMPTY_FORM: ProfileFormState = {
+const EMPTY_ACCOUNT_FORM: AccountFormState = {
+  name: '',
+  platform: 'weixin',
+  description: '',
+  isActive: true,
+  autoPublish: false,
+  dailyLimit: 3,
+};
+
+const EMPTY_PROFILE_FORM: ProfileFormState = {
   audience: '',
   tone: '',
   growthGoal: 'read',
@@ -43,7 +68,29 @@ function splitList(input: string) {
   );
 }
 
-function mapForm(profile: AccountProfileInput): ProfileFormState {
+function mapAccountForm(account: AccountListItem): AccountFormState {
+  return {
+    name: account.name,
+    platform: account.platform,
+    description: account.description || '',
+    isActive: account.isActive,
+    autoPublish: account.autoPublish,
+    dailyLimit: account.dailyLimit,
+  };
+}
+
+function toAccountPayload(form: AccountFormState): AccountMutationInput {
+  return {
+    name: form.name.trim(),
+    platform: form.platform.trim().toLowerCase(),
+    description: form.description,
+    isActive: form.isActive,
+    autoPublish: form.autoPublish,
+    dailyLimit: Math.min(20, Math.max(1, Math.round(form.dailyLimit || 3))),
+  };
+}
+
+function mapProfileForm(profile: AccountProfileInput): ProfileFormState {
   return {
     audience: profile.audience,
     tone: profile.tone,
@@ -56,7 +103,7 @@ function mapForm(profile: AccountProfileInput): ProfileFormState {
   };
 }
 
-function toPayload(form: ProfileFormState): AccountProfileInput {
+function toProfilePayload(form: ProfileFormState): AccountProfileInput {
   return {
     audience: form.audience.trim(),
     tone: form.tone.trim(),
@@ -86,14 +133,47 @@ function formatTime(value: string) {
 
 export default function AccountSettingsPage() {
   const [apiSecret, setApiSecret] = useState('');
-  const [accounts, setAccounts] = useState<Array<{ id: string; name: string; platform: string }>>([]);
+  const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
-  const [form, setForm] = useState<ProfileFormState>(EMPTY_FORM);
+  const [creatingAccount, setCreatingAccount] = useState(false);
+  const [accountForm, setAccountForm] = useState<AccountFormState>(EMPTY_ACCOUNT_FORM);
+
+  const [profileForm, setProfileForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM);
   const [versions, setVersions] = useState<AccountProfileVersionItem[]>([]);
-  const [message, setMessage] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+
+  const [message, setMessage] = useState('');
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [rollingVersionId, setRollingVersionId] = useState<string | null>(null);
+
+  const reloadAccounts = useCallback(
+    async (preferredAccountId?: string) => {
+      if (!apiSecret.trim()) {
+        return;
+      }
+
+      const items = await listAccounts(apiSecret.trim(), { includeInactive: true });
+      setAccounts(items);
+
+      if (items.length === 0) {
+        setSelectedAccountId('');
+        setCreatingAccount(true);
+        setAccountForm(EMPTY_ACCOUNT_FORM);
+        setProfileForm(EMPTY_PROFILE_FORM);
+        setVersions([]);
+        return;
+      }
+
+      const preferId = preferredAccountId || '';
+      const picked = items.find((item) => item.id === preferId) || items[0];
+      setSelectedAccountId(picked.id);
+      setCreatingAccount(false);
+      setAccountForm(mapAccountForm(picked));
+    },
+    [apiSecret]
+  );
 
   useEffect(() => {
     async function load() {
@@ -101,23 +181,27 @@ export default function AccountSettingsPage() {
         return;
       }
 
-      setLoading(true);
+      setLoadingAccounts(true);
       setMessage('');
       try {
-        const items = await listAccounts(apiSecret.trim());
-        setAccounts(items);
-        if (!selectedAccountId && items.length > 0) {
-          setSelectedAccountId(items[0].id);
-        }
+        await reloadAccounts();
       } catch (error) {
         setMessage(error instanceof Error ? error.message : '加载账号失败');
       } finally {
-        setLoading(false);
+        setLoadingAccounts(false);
       }
     }
 
     void load();
-  }, [apiSecret, selectedAccountId]);
+  }, [apiSecret, reloadAccounts]);
+
+  useEffect(() => {
+    const picked = accounts.find((item) => item.id === selectedAccountId);
+    if (picked) {
+      setCreatingAccount(false);
+      setAccountForm(mapAccountForm(picked));
+    }
+  }, [accounts, selectedAccountId]);
 
   useEffect(() => {
     async function loadProfile() {
@@ -125,39 +209,74 @@ export default function AccountSettingsPage() {
         return;
       }
 
-      setLoading(true);
-      setMessage('');
+      setLoadingProfile(true);
       try {
         const result = await getAccountProfile(apiSecret.trim(), selectedAccountId);
-        setForm(mapForm(result.profile));
+        setProfileForm(mapProfileForm(result.profile));
         setVersions(result.versions);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : '加载账号定位失败');
       } finally {
-        setLoading(false);
+        setLoadingProfile(false);
       }
     }
 
     void loadProfile();
   }, [apiSecret, selectedAccountId]);
 
-  async function handleSave() {
+  async function handleSaveAccount() {
+    if (!apiSecret.trim()) {
+      setMessage('请输入 API 密钥');
+      return;
+    }
+
+    const payload = toAccountPayload(accountForm);
+    if (!payload.name) {
+      setMessage('请输入账号名称');
+      return;
+    }
+
+    setSavingAccount(true);
+    setMessage('');
+    try {
+      if (creatingAccount) {
+        const created = await createAccount(apiSecret.trim(), payload);
+        await reloadAccounts(created.id);
+        setMessage('账号创建成功。');
+      } else {
+        if (!selectedAccountId) {
+          setMessage('请选择账号或切换到新建模式');
+          return;
+        }
+
+        const updated = await updateAccount(apiSecret.trim(), selectedAccountId, payload);
+        await reloadAccounts(updated.id);
+        setMessage('账号更新成功。');
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : creatingAccount ? '创建账号失败' : '更新账号失败');
+    } finally {
+      setSavingAccount(false);
+    }
+  }
+
+  async function handleSaveProfile() {
     if (!apiSecret.trim() || !selectedAccountId) {
       setMessage('请输入 API 密钥并选择账号');
       return;
     }
 
-    setSaving(true);
+    setSavingProfile(true);
     setMessage('');
     try {
-      const result = await updateAccountProfile(apiSecret.trim(), selectedAccountId, toPayload(form));
-      setForm(mapForm(result.profile));
+      const result = await updateAccountProfile(apiSecret.trim(), selectedAccountId, toProfilePayload(profileForm));
+      setProfileForm(mapProfileForm(result.profile));
       setVersions(result.versions);
-      setMessage('保存成功，已全局生效。');
+      setMessage('账号定位保存成功，已全局生效。');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '保存失败');
+      setMessage(error instanceof Error ? error.message : '保存账号定位失败');
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
     }
   }
 
@@ -171,7 +290,7 @@ export default function AccountSettingsPage() {
     setMessage('');
     try {
       const result = await rollbackAccountProfile(apiSecret.trim(), selectedAccountId, versionId);
-      setForm(mapForm(result.profile));
+      setProfileForm(mapProfileForm(result.profile));
       setVersions(result.versions);
       setMessage('回滚成功，已生成新当前版本。');
     } catch (error) {
@@ -184,121 +303,235 @@ export default function AccountSettingsPage() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">账号定位设置</h1>
+        <h1 className="text-2xl font-semibold">账号与定位设置</h1>
         <Link href="/" className="text-sm text-blue-600 underline">
           返回首页
         </Link>
       </div>
 
       <div className="space-y-4 rounded-3xl border border-black/[0.08] bg-white p-5 dark:border-white/[0.08] dark:bg-[#1c1c1e]">
-        <div className="grid gap-3 md:grid-cols-2">
-          <input
-            type="password"
-            value={apiSecret}
-            onChange={(event) => setApiSecret(event.target.value)}
-            placeholder="PIPELINE_API_SECRET"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+        <input
+          type="password"
+          value={apiSecret}
+          onChange={(event) => setApiSecret(event.target.value)}
+          placeholder="PIPELINE_API_SECRET"
+          className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+        />
+
+        <section className="space-y-3 rounded-2xl border border-black/[0.08] p-4 dark:border-white/[0.08]">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">账号管理</h2>
+            <button
+              type="button"
+              onClick={() => {
+                setCreatingAccount(true);
+                setSelectedAccountId('');
+                setAccountForm(EMPTY_ACCOUNT_FORM);
+                setProfileForm(EMPTY_PROFILE_FORM);
+                setVersions([]);
+                setMessage('');
+              }}
+              className="rounded-full border border-black/10 px-3 py-1 text-xs dark:border-white/10"
+            >
+              新建账号
+            </button>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <select
+              value={selectedAccountId}
+              onChange={(event) => {
+                setSelectedAccountId(event.target.value);
+                setCreatingAccount(false);
+              }}
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+            >
+              <option value="">选择账号</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name} ({account.platform}) {account.isActive ? '' : '[停用]'}
+                </option>
+              ))}
+            </select>
+            <select
+              value={accountForm.platform}
+              onChange={(event) => setAccountForm((prev) => ({ ...prev, platform: event.target.value }))}
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+            >
+              <option value="weixin">weixin</option>
+            </select>
+            <input
+              value={accountForm.name}
+              onChange={(event) => setAccountForm((prev) => ({ ...prev, name: event.target.value }))}
+              placeholder="账号名称"
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+            />
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={accountForm.dailyLimit}
+              onChange={(event) =>
+                setAccountForm((prev) => ({
+                  ...prev,
+                  dailyLimit: Number(event.target.value) || 3,
+                }))
+              }
+              placeholder="每日上限"
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+            />
+          </div>
+
+          <textarea
+            value={accountForm.description}
+            onChange={(event) => setAccountForm((prev) => ({ ...prev, description: event.target.value }))}
+            placeholder="账号描述（可选）"
+            rows={2}
+            className="w-full rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
           />
-          <select
-            value={selectedAccountId}
-            onChange={(event) => setSelectedAccountId(event.target.value)}
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+
+          <div className="flex flex-wrap gap-4 text-sm">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={accountForm.isActive}
+                onChange={(event) => setAccountForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+              />
+              账号激活
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={accountForm.autoPublish}
+                onChange={(event) =>
+                  setAccountForm((prev) => ({
+                    ...prev,
+                    autoPublish: event.target.checked,
+                  }))
+                }
+              />
+              自动发布
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void handleSaveAccount()}
+            disabled={savingAccount || loadingAccounts || !apiSecret.trim()}
+            className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
           >
-            <option value="">选择账号</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name} ({account.platform})
-              </option>
-            ))}
-          </select>
-        </div>
+            {savingAccount ? '保存中...' : creatingAccount ? '创建账号' : '保存账号信息'}
+          </button>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <input
-            value={form.audience}
-            onChange={(event) => setForm((prev) => ({ ...prev, audience: event.target.value }))}
-            placeholder="目标读者"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-          <input
-            value={form.tone}
-            onChange={(event) => setForm((prev) => ({ ...prev, tone: event.target.value }))}
-            placeholder="语气风格"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-          <input
-            value={form.growthGoal}
-            onChange={(event) => setForm((prev) => ({ ...prev, growthGoal: event.target.value }))}
-            placeholder="增长目标"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-          <input
-            type="number"
-            min={800}
-            max={3000}
-            value={form.preferredLength}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, preferredLength: Number(event.target.value) || 1800 }))
-            }
-            placeholder="目标字数"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-          <input
-            value={form.contentPromise}
-            onChange={(event) => setForm((prev) => ({ ...prev, contentPromise: event.target.value }))}
-            placeholder="内容承诺"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-          <input
-            value={form.ctaStyle}
-            onChange={(event) => setForm((prev) => ({ ...prev, ctaStyle: event.target.value }))}
-            placeholder="CTA 风格"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-          <input
-            value={form.painPoints}
-            onChange={(event) => setForm((prev) => ({ ...prev, painPoints: event.target.value }))}
-            placeholder="读者痛点（分号分隔）"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-          <input
-            value={form.forbiddenTopics}
-            onChange={(event) => setForm((prev) => ({ ...prev, forbiddenTopics: event.target.value }))}
-            placeholder="禁区（分号分隔）"
-            className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-        </div>
+          {accounts.length === 0 && !creatingAccount && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">当前暂无账号，请先创建账号。</p>
+          )}
+        </section>
 
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={saving || loading}
-          className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
-        >
-          {saving ? '保存中...' : '保存并全局生效'}
-        </button>
+        <section className="space-y-3 rounded-2xl border border-black/[0.08] p-4 dark:border-white/[0.08]">
+          <h2 className="text-sm font-semibold">账号定位</h2>
+
+          {!selectedAccountId ? (
+            <p className="text-sm text-gray-500 dark:text-gray-300">请先创建或选择账号，再配置账号定位。</p>
+          ) : (
+            <>
+              <div className="grid gap-3 md:grid-cols-2">
+                <input
+                  value={profileForm.audience}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, audience: event.target.value }))}
+                  placeholder="目标读者"
+                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                />
+                <input
+                  value={profileForm.tone}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, tone: event.target.value }))}
+                  placeholder="语气风格"
+                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                />
+                <input
+                  value={profileForm.growthGoal}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, growthGoal: event.target.value }))}
+                  placeholder="增长目标"
+                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                />
+                <input
+                  type="number"
+                  min={800}
+                  max={3000}
+                  value={profileForm.preferredLength}
+                  onChange={(event) =>
+                    setProfileForm((prev) => ({
+                      ...prev,
+                      preferredLength: Number(event.target.value) || 1800,
+                    }))
+                  }
+                  placeholder="目标字数"
+                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                />
+                <input
+                  value={profileForm.contentPromise}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, contentPromise: event.target.value }))}
+                  placeholder="内容承诺"
+                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                />
+                <input
+                  value={profileForm.ctaStyle}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, ctaStyle: event.target.value }))}
+                  placeholder="CTA 风格"
+                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                />
+                <input
+                  value={profileForm.painPoints}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, painPoints: event.target.value }))}
+                  placeholder="读者痛点（分号分隔）"
+                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                />
+                <input
+                  value={profileForm.forbiddenTopics}
+                  onChange={(event) =>
+                    setProfileForm((prev) => ({
+                      ...prev,
+                      forbiddenTopics: event.target.value,
+                    }))
+                  }
+                  placeholder="禁区（分号分隔）"
+                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleSaveProfile()}
+                disabled={savingProfile || loadingProfile}
+                className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
+              >
+                {savingProfile ? '保存中...' : '保存并全局生效'}
+              </button>
+
+              <div className="rounded-2xl border border-black/[0.08] p-3 dark:border-white/[0.08]">
+                <p className="mb-2 text-sm font-semibold">最近版本（最多10条）</p>
+                <div className="space-y-2">
+                  {versions.map((version) => (
+                    <div key={version.id} className="flex items-center justify-between text-xs">
+                      <span>{formatTime(version.createdAt)}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleRollback(version.id)}
+                        disabled={rollingVersionId === version.id}
+                        className="rounded-full border border-black/10 px-3 py-1 disabled:opacity-50 dark:border-white/10"
+                      >
+                        {rollingVersionId === version.id ? '回滚中' : '回滚'}
+                      </button>
+                    </div>
+                  ))}
+                  {versions.length === 0 && <p className="text-xs text-gray-500">暂无历史版本</p>}
+                </div>
+              </div>
+            </>
+          )}
+        </section>
 
         {message && <p className="text-sm text-gray-600 dark:text-gray-300">{message}</p>}
-
-        <div className="rounded-2xl border border-black/[0.08] p-3 dark:border-white/[0.08]">
-          <p className="mb-2 text-sm font-semibold">最近版本（最多10条）</p>
-          <div className="space-y-2">
-            {versions.map((version) => (
-              <div key={version.id} className="flex items-center justify-between text-xs">
-                <span>{formatTime(version.createdAt)}</span>
-                <button
-                  type="button"
-                  onClick={() => void handleRollback(version.id)}
-                  disabled={rollingVersionId === version.id}
-                  className="rounded-full border border-black/10 px-3 py-1 disabled:opacity-50 dark:border-white/10"
-                >
-                  {rollingVersionId === version.id ? '回滚中' : '回滚'}
-                </button>
-              </div>
-            ))}
-            {versions.length === 0 && <p className="text-xs text-gray-500">暂无历史版本</p>}
-          </div>
-        </div>
       </div>
     </main>
   );
