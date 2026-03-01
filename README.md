@@ -12,8 +12,14 @@
 3. 机会查询：`GET /api/opportunities`
 4. 草稿生成：`POST /api/drafts/generate`
 5. 草稿详情：`GET /api/drafts/:id`
-6. 发布任务：`POST /api/publish/wechat`
-7. 发布重试：`POST /api/publish/jobs/:id/retry`
+6. 草稿重生：`POST /api/drafts/:id/regenerate`
+7. 配图占位规划：`POST /api/drafts/:id/assets/plan`
+8. 账号定位读取/更新/回滚：
+   - `GET /api/accounts/:id/profile`
+   - `PUT /api/accounts/:id/profile`
+   - `POST /api/accounts/:id/profile/rollback`
+9. 发布任务：`POST /api/publish/wechat`
+10. 发布重试：`POST /api/publish/jobs/:id/retry`
 
 ## UI 使用方式
 
@@ -24,9 +30,12 @@
 内容生产模式操作顺序：
 1. 输入 `PIPELINE_API_SECRET` 与 `PIPELINE_SYNC_SECRET`
 2. 点击“同步机会”
-3. 在机会列表点击“生成草稿”
-4. 在草稿区域点击“提交发布任务”
-5. 在发布任务区域查看状态并按需重试
+3. 在“账号定位”卡片确认并保存账号策略（全局生效）
+4. 在机会列表点击“生成草稿”
+5. 对当前草稿可执行“重新生成”获取全新版本
+6. 人工满意后点击“生成配图占位”
+7. 在草稿区域点击“提交发布任务”
+8. 在发布任务区域查看状态并按需重试
 
 ## 微信个人号限制说明
 
@@ -47,12 +56,15 @@
 
 内容生产相关（按需）：
 1. `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`
-2. `RISK_POLICY`
-3. `OPPORTUNITY_MIN_SCORE`
-4. `WECHAT_PUBLISH_MODE`（默认 `draftbox`）
-5. `WECHAT_PUBLISH_DRY_RUN`
-6. `WECHAT_PUBLISH_ENDPOINT`
-7. `WECHAT_PUBLISH_TOKEN`
+2. `LLM_API_STYLE`（`chat-completions` 或 `responses`）
+3. `LLM_AUTH_MODE`（`bearer` 或 `api-key`）
+2. `LLM_STRICT_MODE`（建议生产开启）
+4. `RISK_POLICY`
+5. `OPPORTUNITY_MIN_SCORE`
+6. `WECHAT_PUBLISH_MODE`（默认 `draftbox`）
+7. `WECHAT_PUBLISH_DRY_RUN`
+8. `WECHAT_PUBLISH_ENDPOINT`
+9. `WECHAT_PUBLISH_TOKEN`
 
 ## 本地运行
 
@@ -72,4 +84,7 @@ npm test
 
 ## 参考文档
 
-详细阶段规格见：`docs/spec-pipeline-content-engine.md`
+1. 新会话快速入口：`docs/SESSION-BOOTSTRAP.md`
+2. 当前阶段规格：`docs/spec-pipeline-content-engine.md`
+3. 工作流 Spec 模板：`docs/workflow/spec-template.md`
+4. 周复盘模板：`docs/weekly-workflow-review.md`

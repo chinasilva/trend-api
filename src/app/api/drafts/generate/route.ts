@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireSecretAuth } from '@/lib/pipeline/auth';
 import { generateDraftFromOpportunity } from '@/lib/pipeline/draft-service';
+import type { AccountProfileInput } from '@/types/pipeline';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,11 @@ export async function POST(request: Request) {
       return authError;
     }
 
-    const body = (await request.json()) as { opportunityId?: string };
+    const body = (await request.json()) as {
+      opportunityId?: string;
+      profileOverride?: Partial<AccountProfileInput>;
+      regenerateFromDraftId?: string;
+    };
     const opportunityId = body.opportunityId?.trim();
 
     if (!opportunityId) {
@@ -27,7 +32,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await generateDraftFromOpportunity(opportunityId);
+    const result = await generateDraftFromOpportunity(opportunityId, {
+      profileOverride: body.profileOverride,
+      regenerateFromDraftId: body.regenerateFromDraftId?.trim() || undefined,
+    });
 
     return NextResponse.json({
       success: true,

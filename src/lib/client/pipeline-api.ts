@@ -1,6 +1,10 @@
 import type {
+  AccountProfileData,
+  AccountProfileInput,
+  AccountProfileVersionItem,
   DraftDetail,
   DraftGenerationData,
+  DraftImagePlaceholder,
   OpportunityListData,
   OpportunityStatus,
   PublishJobResult,
@@ -88,13 +92,54 @@ export async function listOpportunities(
   });
 }
 
-export async function generateDraft(secret: string, opportunityId: string) {
+export async function generateDraft(
+  secret: string,
+  opportunityId: string,
+  options?: {
+    profileOverride?: Partial<AccountProfileInput>;
+    regenerateFromDraftId?: string;
+  }
+) {
   ensureSecret(secret, 'API 密钥');
   return requestJson<DraftGenerationData>('/api/drafts/generate', {
     method: 'POST',
     headers: buildHeaders(secret),
-    body: JSON.stringify({ opportunityId }),
+    body: JSON.stringify({
+      opportunityId,
+      profileOverride: options?.profileOverride,
+      regenerateFromDraftId: options?.regenerateFromDraftId,
+    }),
   });
+}
+
+export async function regenerateDraft(secret: string, draftId: string) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<DraftGenerationData>(`/api/drafts/${draftId}/regenerate`, {
+    method: 'POST',
+    headers: buildHeaders(secret),
+  });
+}
+
+export async function planDraftAssets(
+  secret: string,
+  draftId: string,
+  options?: {
+    imageCount?: number;
+    stylePreset?: string;
+  }
+) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<{ imagePlan: DraftImagePlaceholder[]; status: 'planned' }>(
+    `/api/drafts/${draftId}/assets/plan`,
+    {
+      method: 'POST',
+      headers: buildHeaders(secret),
+      body: JSON.stringify({
+        imageCount: options?.imageCount ?? 4,
+        stylePreset: options?.stylePreset ?? 'news-analysis',
+      }),
+    }
+  );
 }
 
 export async function getDraftDetail(secret: string, draftId: string) {
@@ -120,4 +165,49 @@ export async function retryPublishJob(secret: string, jobId: string, allowReview
     headers: buildHeaders(secret),
     body: JSON.stringify({ allowReview }),
   });
+}
+
+export async function listAccounts(secret: string) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<Array<{ id: string; name: string; platform: string }>>('/api/accounts', {
+    headers: buildHeaders(secret),
+  });
+}
+
+export async function getAccountProfile(secret: string, accountId: string) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<{ profile: AccountProfileData; versions: AccountProfileVersionItem[] }>(
+    `/api/accounts/${accountId}/profile`,
+    {
+      headers: buildHeaders(secret),
+    }
+  );
+}
+
+export async function updateAccountProfile(
+  secret: string,
+  accountId: string,
+  profile: AccountProfileInput
+) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<{ profile: AccountProfileData; versions: AccountProfileVersionItem[] }>(
+    `/api/accounts/${accountId}/profile`,
+    {
+      method: 'PUT',
+      headers: buildHeaders(secret),
+      body: JSON.stringify(profile),
+    }
+  );
+}
+
+export async function rollbackAccountProfile(secret: string, accountId: string, versionId: string) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<{ profile: AccountProfileData; versions: AccountProfileVersionItem[] }>(
+    `/api/accounts/${accountId}/profile/rollback`,
+    {
+      method: 'POST',
+      headers: buildHeaders(secret),
+      body: JSON.stringify({ versionId }),
+    }
+  );
 }
