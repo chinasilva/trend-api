@@ -1,4 +1,6 @@
 import type {
+  AccountListItem,
+  AccountMutationInput,
   AccountProfileData,
   AccountProfileInput,
   AccountProfileVersionItem,
@@ -167,10 +169,41 @@ export async function retryPublishJob(secret: string, jobId: string, allowReview
   });
 }
 
-export async function listAccounts(secret: string) {
+export async function listAccounts(
+  secret: string,
+  options?: {
+    includeInactive?: boolean;
+  }
+) {
   ensureSecret(secret, 'API 密钥');
-  return requestJson<Array<{ id: string; name: string; platform: string }>>('/api/accounts', {
+  const search = new URLSearchParams();
+  if (options?.includeInactive) {
+    search.set('includeInactive', 'true');
+  }
+
+  const query = search.toString();
+  const endpoint = query ? `/api/accounts?${query}` : '/api/accounts';
+
+  return requestJson<AccountListItem[]>(endpoint, {
     headers: buildHeaders(secret),
+  });
+}
+
+export async function createAccount(secret: string, payload: AccountMutationInput) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<AccountListItem>('/api/accounts', {
+    method: 'POST',
+    headers: buildHeaders(secret),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAccount(secret: string, accountId: string, payload: AccountMutationInput) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<AccountListItem>(`/api/accounts/${accountId}`, {
+    method: 'PATCH',
+    headers: buildHeaders(secret),
+    body: JSON.stringify(payload),
   });
 }
 

@@ -7,6 +7,7 @@ import type {
 } from '@/types/pipeline';
 
 const MAX_PROFILE_HISTORY = 10;
+const ACCOUNT_PLATFORM_WHITELIST = new Set(['weixin']);
 
 const DEFAULT_PROFILE: AccountProfileInput = {
   audience: '关注实时热点、希望快速理解事件影响的中文读者',
@@ -18,6 +19,25 @@ const DEFAULT_PROFILE: AccountProfileInput = {
   ctaStyle: '评论区提问+下篇预告',
   preferredLength: 1800,
 };
+
+export interface AccountListItem {
+  id: string;
+  name: string;
+  platform: string;
+  description: string | null;
+  isActive: boolean;
+  autoPublish: boolean;
+  dailyLimit: number;
+}
+
+export interface AccountMutationInput {
+  name?: string;
+  platform?: string;
+  description?: string;
+  isActive?: boolean;
+  autoPublish?: boolean;
+  dailyLimit?: number;
+}
 
 function normalizeStringArray(value: unknown, max = 10) {
   if (!Array.isArray(value)) {
@@ -53,6 +73,67 @@ function normalizeLength(value: unknown, fallback: number) {
   }
 
   return Math.min(3000, Math.max(800, Math.round(value)));
+}
+
+function normalizeAccountName(value: unknown, fallback?: string) {
+  if (typeof value !== 'string') {
+    if (fallback !== undefined) {
+      return fallback;
+    }
+    throw new Error('Validation failed: account name is required.');
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error('Validation failed: account name is required.');
+  }
+
+  return normalized.slice(0, 80);
+}
+
+function normalizeAccountPlatform(value: unknown, fallback?: string) {
+  if (typeof value !== 'string') {
+    if (fallback !== undefined) {
+      return fallback;
+    }
+    throw new Error('Validation failed: account platform is required.');
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!ACCOUNT_PLATFORM_WHITELIST.has(normalized)) {
+    throw new Error(`Validation failed: unsupported account platform "${normalized}".`);
+  }
+
+  return normalized;
+}
+
+function normalizeAccountDescription(value: unknown) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.slice(0, 300);
+}
+
+function normalizeAccountDailyLimit(value: unknown, fallback: number) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return fallback;
+  }
+
+  return Math.min(20, Math.max(1, Math.round(value)));
+}
+
+function normalizeAccountFlag(value: unknown, fallback: boolean) {
+  if (typeof value !== 'boolean') {
+    return fallback;
+  }
+
+  return value;
 }
 
 function toInput(profile: {
@@ -281,11 +362,9 @@ export async function getAccountProfileWithVersions(accountId: string): Promise<
   };
 }
 
-export async function listActiveAccounts() {
+export async function listAccounts(options?: { includeInactive?: boolean }): Promise<AccountListItem[]> {
   const accounts = await prisma.account.findMany({
-    where: {
-      isActive: true,
-    },
+    where: options?.includeInactive ? undefined : { isActive: true },
     orderBy: [
       {
         updatedAt: 'desc',
@@ -298,10 +377,101 @@ export async function listActiveAccounts() {
       id: true,
       name: true,
       platform: true,
+      description: true,
+      isActive: true,
+      autoPublish: true,
+      dailyLimit: true,
     },
   });
 
   return accounts;
+}
+
+export async function createAccount(input: AccountMutationInput): Promise<AccountListItem> {
+  const name = normalizeAccountName(input.name);
+  const platform = normalizeAccountPlatform(input.platform, 'weixin');
+  const account = await prisma.account.create({
+    data: {
+      name,
+      platform,
+      description: normalizeAccountDescription(input.description),
+      isActive: normalizeAccountFlag(input.isActive, true),
+      autoPublish: normalizeAccountFlag(input.autoPublish, false),
+      dailyLimit: normalizeAccountDailyLimit(input.dailyLimit, 3),
+    },
+    select: {
+      id: true,
+      name: true,
+      platform: true,
+      description: true,
+      isActive: true,
+      autoPublish: true,
+      dailyLimit: true,
+    },
+  });
+
+  return account;
+}
+
+export async function updateAccount(
+  accountId: string,
+  input: AccountMutationInput
+): Promise<AccountListItem> {
+  const existing = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: {
+      id: true,
+      name: true,
+      platform: true,
+      description: true,
+      isActive: true,
+      autoPublish: true,
+      dailyLimit: true,
+    },
+  });
+
+  if (!existing) {
+    throw new Error(`Account not found: ${accountId}`);
+  }
+
+  const account = await prisma.account.update({
+    where: {
+      id: accountId,
+    },
+    data: {
+      name:
+        input.name === undefined
+          ? undefined
+          : normalizeAccountName(input.name, existing.name),
+      platform:
+        input.platform === undefined
+          ? undefined
+          : normalizeAccountPlatform(input.platform, existing.platform),
+      description:
+        input.description === undefined ? undefined : normalizeAccountDescription(input.description),
+      isActive:
+        input.isActive === undefined ? undefined : normalizeAccountFlag(input.isActive, existing.isActive),
+      autoPublish:
+        input.autoPublish === undefined
+          ? undefined
+          : normalizeAccountFlag(input.autoPublish, existing.autoPublish),
+      dailyLimit:
+        input.dailyLimit === undefined
+          ? undefined
+          : normalizeAccountDailyLimit(input.dailyLimit, existing.dailyLimit),
+    },
+    select: {
+      id: true,
+      name: true,
+      platform: true,
+      description: true,
+      isActive: true,
+      autoPublish: true,
+      dailyLimit: true,
+    },
+  });
+
+  return account;
 }
 
 export async function updateAccountProfile(
