@@ -123,9 +123,43 @@ model Account {
 
   categories    AccountCategory[]
   opportunities Opportunity[]
+  profile       AccountProfile?
+  profileVersions AccountProfileVersion[]
   drafts        Draft[]
   publishJobs   PublishJob[]
   metrics       PerformanceMetric[]
+}
+
+model AccountProfile {
+  id              String   @id @default(cuid())
+  accountId       String   @unique
+  audience        String
+  tone            String
+  growthGoal      String   @default("read")
+  painPoints      Json?
+  contentPromise  String?
+  forbiddenTopics Json?
+  ctaStyle        String?
+  preferredLength Int      @default(1800)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  account  Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  versions AccountProfileVersion[]
+}
+
+model AccountProfileVersion {
+  id              String   @id @default(cuid())
+  accountId       String
+  accountProfileId String
+  profileSnapshot Json
+  createdAt       DateTime @default(now())
+
+  account Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  profile AccountProfile @relation(fields: [accountProfileId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([accountProfileId, createdAt])
 }
 
 model Category {
@@ -198,6 +232,8 @@ model Draft {
   id              String     @id @default(cuid())
   opportunityId   String
   accountId       String
+  parentDraftId   String?
+  regenerationIndex Int      @default(0)
   title           String
   outline         Json?
   content         String
@@ -212,10 +248,13 @@ model Draft {
 
   opportunity Opportunity  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  parentDraft Draft?       @relation("DraftRegeneration", fields: [parentDraftId], references: [id], onDelete: SetNull)
+  regenerations Draft[]    @relation("DraftRegeneration")
   publishJobs PublishJob[]
   metrics     PerformanceMetric[]
 
   @@index([accountId, status, createdAt])
+  @@index([parentDraftId, createdAt])
 }
 
 model PublishJob {

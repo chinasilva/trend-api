@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireSecretAuth } from '@/lib/pipeline/auth';
+import { parseDraftMetadata } from '@/lib/pipeline/draft-metadata';
 
 interface RouteParams {
   params: Promise<{
@@ -70,6 +71,8 @@ export async function GET(request: Request, { params }: RouteParams) {
       );
     }
 
+    const metadata = parseDraftMetadata(draft.metadata as Prisma.JsonValue | null | undefined);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -82,6 +85,11 @@ export async function GET(request: Request, { params }: RouteParams) {
         status: draft.status,
         riskLevel: draft.riskLevel,
         riskScore: draft.riskScore,
+        qualityReport: metadata.qualityReport,
+        contentPack: metadata.contentPack,
+        imagePlaceholders: metadata.imagePlaceholders,
+        generationTrace: metadata.generationTrace,
+        regeneration: metadata.regeneration,
         createdAt: draft.createdAt.toISOString(),
         updatedAt: draft.updatedAt.toISOString(),
         account: draft.account,

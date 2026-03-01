@@ -17,6 +17,9 @@ export interface LLMProvider {
   generate(input: GenerateWithLLMInput): Promise<LLMGeneratedDraft>;
 }
 
+type LLMApiStyle = 'chat-completions' | 'responses';
+type LLMAuthMode = 'bearer' | 'api-key';
+
 function toStringArray(value: unknown) {
   if (!Array.isArray(value)) {
     return [] as string[];
@@ -38,6 +41,61 @@ function extractJsonText(raw: string) {
   }
 
   return raw;
+}
+
+function parseGeneratedDraft(rawContent: string, raw: unknown, model: string): LLMGeneratedDraft {
+  const parsedText = extractJsonText(rawContent);
+  const parsed = JSON.parse(parsedText) as {
+    title?: string;
+    outline?: unknown;
+    content?: string;
+  };
+
+  if (!parsed.title || !parsed.content) {
+    throw new Error('LLM response is missing title/content.');
+  }
+
+  return {
+    title: parsed.title,
+    outline: toStringArray(parsed.outline),
+    content: parsed.content,
+    model,
+    raw,
+  };
+}
+
+function extractResponsesText(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+
+  const value = raw as Record<string, unknown>;
+  if (typeof value.output_text === 'string' && value.output_text.trim()) {
+    return value.output_text.trim();
+  }
+
+  const output = Array.isArray(value.output) ? value.output : [];
+  for (const item of output) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const content = Array.isArray((item as Record<string, unknown>).content)
+      ? ((item as Record<string, unknown>).content as unknown[])
+      : [];
+    for (const block of content) {
+      if (!block || typeof block !== 'object') {
+        continue;
+      }
+
+      const text = (block as Record<string, unknown>).text;
+      if (typeof text === 'string' && text.trim()) {
+        return text.trim();
+      }
+    }
+  }
+
+  return null;
 }
 
 class TemplateFallbackProvider implements LLMProvider {
@@ -74,17 +132,33 @@ class OpenAICompatibleProvider implements LLMProvider {
   constructor(
     private readonly apiKey: string,
     private readonly baseUrl: string,
-    private readonly model: string
+    private readonly model: string,
+    private readonly apiStyle: LLMApiStyle,
+    private readonly authMode: LLMAuthMode
   ) {}
 
-  async generate(input: GenerateWithLLMInput): Promise<LLMGeneratedDraft> {
+  private buildHeaders() {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+
+    if (this.authMode === 'api-key') {
+      headers['x-api-key'] = this.apiKey;
+      headers['x-goog-api-key'] = this.apiKey;
+      headers['api-key'] = this.apiKey;
+    } else {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
+    return headers;
+  }
+
+  private async callChatCompletions(input: GenerateWithLLMInput) {
     const endpoint = `${this.baseUrl.replace(/\/$/, '')}/chat/completions`;
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers: this.buildHeaders(),
       body: JSON.stringify({
         model: this.model,
         temperature: 0.4,
@@ -113,24 +187,57 @@ class OpenAICompatibleProvider implements LLMProvider {
       throw new Error('LLM returned empty content.');
     }
 
-    const parsedText = extractJsonText(rawContent);
-    const parsed = JSON.parse(parsedText) as {
-      title?: string;
-      outline?: unknown;
-      content?: string;
-    };
+    return parseGeneratedDraft(rawContent, json, json.model ?? this.model);
+  }
 
-    if (!parsed.title || !parsed.content) {
-      throw new Error('LLM response is missing title/content.');
+  private async callResponses(input: GenerateWithLLMInput) {
+    const endpoint = `${this.baseUrl.replace(/\/$/, '')}/responses`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: this.buildHeaders(),
+      body: JSON.stringify({
+        model: this.model,
+        temperature: 0.4,
+        input: [
+          {
+            role: 'system',
+            content: [{ type: 'input_text', text: input.systemPrompt }],
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: `${input.userPrompt}\n\n请只输出 JSON：{"title":"","outline":[""],"content":""}`,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`LLM request failed: ${response.status} ${text}`);
     }
 
-    return {
-      title: parsed.title,
-      outline: toStringArray(parsed.outline),
-      content: parsed.content,
-      model: json.model ?? this.model,
-      raw: json,
-    };
+    const json = (await response.json()) as Record<string, unknown>;
+    const rawContent = extractResponsesText(json);
+
+    if (!rawContent) {
+      throw new Error('LLM responses API returned empty content.');
+    }
+
+    const responseModel = typeof json.model === 'string' ? json.model : this.model;
+    return parseGeneratedDraft(rawContent, json, responseModel);
+  }
+
+  async generate(input: GenerateWithLLMInput): Promise<LLMGeneratedDraft> {
+    if (this.apiStyle === 'responses') {
+      return this.callResponses(input);
+    }
+
+    return this.callChatCompletions(input);
   }
 }
 
@@ -138,10 +245,26 @@ export function getLLMProvider(): LLMProvider {
   const apiKey = process.env.LLM_API_KEY;
   const baseUrl = process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1';
   const model = process.env.LLM_MODEL ?? 'gpt-4o-mini';
+  const rawApiStyle = (process.env.LLM_API_STYLE ?? 'chat-completions').toLowerCase();
+  const apiStyle: LLMApiStyle =
+    rawApiStyle === 'responses' || rawApiStyle === 'openai-responses'
+      ? 'responses'
+      : 'chat-completions';
+  const rawAuthMode = (process.env.LLM_AUTH_MODE ?? 'bearer').toLowerCase();
+  const authMode: LLMAuthMode = rawAuthMode === 'api-key' ? 'api-key' : 'bearer';
+  const strictRaw = process.env.LLM_STRICT_MODE;
+  const strictMode =
+    strictRaw === undefined ? process.env.NODE_ENV === 'production' : strictRaw === 'true';
 
   if (!apiKey) {
+    if (strictMode) {
+      throw new Error(
+        'LLM_API_KEY is required in strict mode. Set LLM_API_KEY or disable LLM_STRICT_MODE.'
+      );
+    }
+
     return new TemplateFallbackProvider();
   }
 
-  return new OpenAICompatibleProvider(apiKey, baseUrl, model);
+  return new OpenAICompatibleProvider(apiKey, baseUrl, model, apiStyle, authMode);
 }

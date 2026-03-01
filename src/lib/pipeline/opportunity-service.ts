@@ -97,30 +97,79 @@ function scoreClusterGrowth(items: Array<{ rank: number; hotValue: number | null
   return clamp((rankScore * 0.7 + hotScore * 0.3) * 100, 0, 100);
 }
 
+function scoreClusterMomentum(
+  items: Array<{ rank: number; hotValue: number | null; createdAt: Date }>
+) {
+  if (items.length < 2) {
+    return 50;
+  }
+
+  const sorted = [...items].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const midpoint = Math.max(1, Math.floor(sorted.length / 2));
+  const early = sorted.slice(0, midpoint);
+  const late = sorted.slice(midpoint);
+
+  if (late.length === 0) {
+    return 50;
+  }
+
+  const earlyRank = early.reduce((sum, item) => sum + item.rank, 0) / early.length;
+  const lateRank = late.reduce((sum, item) => sum + item.rank, 0) / late.length;
+  const rankDeltaScore = clamp(((earlyRank - lateRank) + 20) / 40, 0, 1);
+
+  const earlyHot = early.reduce((sum, item) => sum + (item.hotValue ?? 0), 0) / early.length;
+  const lateHot = late.reduce((sum, item) => sum + (item.hotValue ?? 0), 0) / late.length;
+  const hotDeltaScore =
+    earlyHot > 0 || lateHot > 0
+      ? clamp((lateHot - earlyHot + Math.max(earlyHot, lateHot)) / (Math.max(earlyHot, lateHot) * 2 + 1), 0, 1)
+      : 0.5;
+
+  return clamp((rankDeltaScore * 0.7 + hotDeltaScore * 0.3) * 100, 0, 100);
+}
+
+function scorePersistence(items: Array<{ platform: string }>, resonanceCount: number) {
+  if (items.length === 0 || resonanceCount <= 0) {
+    return 0;
+  }
+
+  const avgRepeat = items.length / resonanceCount;
+  return clamp((1 - Math.exp(-avgRepeat / 2)) * 100, 0, 100);
+}
+
 function scoreOpportunity(params: {
   resonanceCount: number;
   growthScore: number;
+  persistenceScore: number;
   latestSnapshotAt: Date;
   title: string;
   categoryScore: number;
 }): OpportunityScoreResult {
-  const resonanceScore = clamp(params.resonanceCount * 12, 0, 40);
-  const growthComponent = clamp(params.growthScore * 0.3, 0, 30);
+  const baseHeat = clamp(params.growthScore, 0, 100);
+  const crossSource = clamp((params.resonanceCount / 5) * 100, 0, 100);
+  const momentum = clamp(params.growthScore * 0.8 + params.persistenceScore * 0.2, 0, 100);
   const ageMinutes = Math.max(0, (Date.now() - params.latestSnapshotAt.getTime()) / 60000);
-  const timelinessScore = clamp(20 * (1 - ageMinutes / 240), 0, 20);
+  const freshness = clamp(100 * (1 - ageMinutes / 360), 0, 100);
 
   const loweredTitle = params.title.toLowerCase();
   const hasHighRisk = HIGH_RISK_TERMS.some((term) => loweredTitle.includes(term));
-  const riskPenalty = hasHighRisk ? 18 : 0;
+  const riskPenalty = hasHighRisk ? 16 : 0;
 
   const rawScore =
-    resonanceScore + growthComponent + timelinessScore + params.categoryScore - riskPenalty;
+    baseHeat * 0.3 +
+    crossSource * 0.25 +
+    momentum * 0.2 +
+    freshness * 0.15 +
+    params.persistenceScore * 0.1 +
+    params.categoryScore -
+    riskPenalty;
   const score = Math.round(clamp(rawScore, 0, 100));
 
   const reasons = [
-    `resonance:${params.resonanceCount}`,
-    `growth:${params.growthScore.toFixed(1)}`,
-    `timeliness:${timelinessScore.toFixed(1)}`,
+    `hot:${baseHeat.toFixed(1)}`,
+    `cross-source:${crossSource.toFixed(1)}`,
+    `momentum:${momentum.toFixed(1)}`,
+    `freshness:${freshness.toFixed(1)}`,
+    `persistence:${params.persistenceScore.toFixed(1)}`,
     `category:${params.categoryScore.toFixed(1)}`,
   ];
 
@@ -250,22 +299,37 @@ async function collectClusters(windowStart: Date, windowEnd: Date) {
     }
   }
 
-  const clusters: TopicClusterInput[] = Array.from(grouped.entries()).map(([fingerprint, group]) => ({
-    fingerprint,
-    title: group.title,
-    keywords: Array.from(group.keywords).slice(0, 10),
-    evidences: toEvidence(group.items),
-    resonanceCount: group.platforms.size,
-    growthScore: scoreClusterGrowth(
+  const clusters: TopicClusterInput[] = Array.from(grouped.entries()).map(([fingerprint, group]) => {
+    const baseHeat = scoreClusterGrowth(
       group.items.map((item) => ({
         rank: item.rank,
         hotValue: item.hotValue,
       }))
-    ),
-    latestSnapshotAt: group.latestSnapshotAt,
-    windowStart,
-    windowEnd,
-  }));
+    );
+
+    const momentum = scoreClusterMomentum(
+      group.items.map((item) => ({
+        rank: item.rank,
+        hotValue: item.hotValue,
+        createdAt: item.createdAt,
+      }))
+    );
+
+    const persistenceScore = scorePersistence(group.items, group.platforms.size);
+
+    return {
+      fingerprint,
+      title: group.title,
+      keywords: Array.from(group.keywords).slice(0, 10),
+      evidences: toEvidence(group.items),
+      resonanceCount: group.platforms.size,
+      growthScore: clamp(baseHeat * 0.65 + momentum * 0.35, 0, 100),
+      persistenceScore,
+      latestSnapshotAt: group.latestSnapshotAt,
+      windowStart,
+      windowEnd,
+    };
+  });
 
   return {
     clusters,
@@ -358,6 +422,7 @@ export async function syncOpportunities(windowHours = DEFAULT_WINDOW_HOURS): Pro
       const scoreResult = scoreOpportunity({
         resonanceCount: cluster.resonanceCount,
         growthScore: cluster.growthScore,
+        persistenceScore: cluster.persistenceScore,
         latestSnapshotAt: cluster.latestSnapshotAt,
         title: cluster.title,
         categoryScore: match.score,
