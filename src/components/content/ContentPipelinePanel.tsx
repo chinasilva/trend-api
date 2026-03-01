@@ -6,6 +6,12 @@ import DraftPreview from '@/components/content/DraftPreview';
 import OpportunityList from '@/components/content/OpportunityList';
 import PublishJobList from '@/components/content/PublishJobList';
 import {
+  fetchPipelineSession,
+  loginPipeline,
+  logoutPipeline,
+  SESSION_AUTH_PLACEHOLDER,
+} from '@/lib/client/pipeline-auth';
+import {
   generateDraft,
   getAccountProfile,
   getDraftDetail,
@@ -131,6 +137,11 @@ function formatTime(value: string) {
 export default function ContentPipelinePanel() {
   const [apiSecret, setApiSecret] = useState('');
   const [syncSecret, setSyncSecret] = useState('');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authUser, setAuthUser] = useState<string | null>(null);
   const [windowHours, setWindowHours] = useState(2);
 
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus>('NEW');
@@ -160,6 +171,36 @@ export default function ContentPipelinePanel() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [rollingBackVersionId, setRollingBackVersionId] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerState | null>(null);
+
+  const loadSession = useCallback(async () => {
+    setAuthChecking(true);
+    try {
+      const session = await fetchPipelineSession();
+      if (session.authenticated) {
+        setAuthUser(session.username || 'admin');
+        setApiSecret(SESSION_AUTH_PLACEHOLDER);
+        setSyncSecret(SESSION_AUTH_PLACEHOLDER);
+      } else {
+        setAuthUser(null);
+        setApiSecret('');
+        setSyncSecret('');
+      }
+    } catch (error) {
+      setAuthUser(null);
+      setApiSecret('');
+      setSyncSecret('');
+      setBanner({
+        type: 'error',
+        text: error instanceof Error ? error.message : '登录状态校验失败。',
+      });
+    } finally {
+      setAuthChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
 
   const selectedOpportunity = useMemo(
     () => opportunities.find((item) => item.id === selectedOpportunityId) || null,
@@ -230,9 +271,60 @@ export default function ContentPipelinePanel() {
     void loadAccounts();
   }, [apiSecret, loadAccounts]);
 
+  async function handleLogin() {
+    const username = loginUsername.trim();
+    if (!username || !loginPassword) {
+      setBanner({ type: 'error', text: '请输入账号和密码。' });
+      return;
+    }
+
+    setAuthSubmitting(true);
+    setBanner(null);
+    try {
+      const session = await loginPipeline(username, loginPassword);
+      setAuthUser(session.username || username);
+      setApiSecret(SESSION_AUTH_PLACEHOLDER);
+      setSyncSecret(SESSION_AUTH_PLACEHOLDER);
+      setLoginPassword('');
+    } catch (error) {
+      setBanner({
+        type: 'error',
+        text: error instanceof Error ? error.message : '登录失败。',
+      });
+      setAuthUser(null);
+      setApiSecret('');
+      setSyncSecret('');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleLogout() {
+    setAuthSubmitting(true);
+    setBanner(null);
+    try {
+      await logoutPipeline();
+      setAuthUser(null);
+      setApiSecret('');
+      setSyncSecret('');
+      setAccounts([]);
+      setOpportunities([]);
+      setSelectedOpportunityId(null);
+      setSelectedAccountId('');
+      setDraft(null);
+    } catch (error) {
+      setBanner({
+        type: 'error',
+        text: error instanceof Error ? error.message : '退出登录失败。',
+      });
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
   async function loadOpportunities(page = 1) {
     if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先输入 API 密钥。' });
+      setBanner({ type: 'error', text: '请先登录。' });
       return;
     }
 
@@ -270,7 +362,7 @@ export default function ContentPipelinePanel() {
   async function handleSync() {
     const trimmedSyncSecret = syncSecret.trim();
     if (!trimmedSyncSecret) {
-      setBanner({ type: 'error', text: '请先输入同步密钥 PIPELINE_SYNC_SECRET。' });
+      setBanner({ type: 'error', text: '请先登录。' });
       return;
     }
 
@@ -295,7 +387,7 @@ export default function ContentPipelinePanel() {
 
   async function loadDraft(draftId: string) {
     if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先输入 API 密钥。' });
+      setBanner({ type: 'error', text: '请先登录。' });
       return;
     }
 
@@ -315,7 +407,7 @@ export default function ContentPipelinePanel() {
 
   async function handleGenerate(opportunityId: string) {
     if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先输入 API 密钥。' });
+      setBanner({ type: 'error', text: '请先登录。' });
       return;
     }
 
@@ -341,7 +433,7 @@ export default function ContentPipelinePanel() {
 
   async function handleRegenerate() {
     if (!draft || !apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先生成草稿并输入 API 密钥。' });
+      setBanner({ type: 'error', text: '请先登录并生成草稿。' });
       return;
     }
 
@@ -363,7 +455,7 @@ export default function ContentPipelinePanel() {
 
   async function handlePlanAssets() {
     if (!draft || !apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先生成草稿并输入 API 密钥。' });
+      setBanner({ type: 'error', text: '请先登录并生成草稿。' });
       return;
     }
 
@@ -393,7 +485,7 @@ export default function ContentPipelinePanel() {
     }
 
     if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先输入 API 密钥。' });
+      setBanner({ type: 'error', text: '请先登录。' });
       return;
     }
 
@@ -421,7 +513,7 @@ export default function ContentPipelinePanel() {
 
   async function handleRetry(jobId: string, allowReview: boolean) {
     if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先输入 API 密钥。' });
+      setBanner({ type: 'error', text: '请先登录。' });
       return;
     }
 
@@ -467,7 +559,7 @@ export default function ContentPipelinePanel() {
 
   async function handleSaveProfile() {
     if (!apiSecret.trim() || !selectedAccountId) {
-      setBanner({ type: 'error', text: '请先输入 API 密钥并选择账号。' });
+      setBanner({ type: 'error', text: '请先登录并选择账号。' });
       return;
     }
 
@@ -495,7 +587,7 @@ export default function ContentPipelinePanel() {
 
   async function handleRollback(versionId: string) {
     if (!apiSecret.trim() || !selectedAccountId) {
-      setBanner({ type: 'error', text: '请先输入 API 密钥并选择账号。' });
+      setBanner({ type: 'error', text: '请先登录并选择账号。' });
       return;
     }
 
@@ -525,6 +617,62 @@ export default function ContentPipelinePanel() {
     }
   }
 
+  if (authChecking) {
+    return (
+      <section className="mx-auto max-w-[1440px]">
+        <div className="rounded-[2.5rem] border border-black/[0.05] bg-white/75 p-6 text-sm text-gray-600 shadow-[0_8px_40px_rgb(0,0,0,0.04)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1c1c1e]/75 dark:text-gray-300 lg:p-8">
+          正在校验登录状态...
+        </div>
+      </section>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <section className="mx-auto max-w-[1440px]">
+        <div className="rounded-[2.5rem] border border-black/[0.05] bg-white/75 p-6 shadow-[0_8px_40px_rgb(0,0,0,0.04)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1c1c1e]/75 lg:p-8">
+          <h2 className="mb-3 text-2xl font-semibold tracking-tight text-black dark:text-white">
+            内容生产操作台登录
+          </h2>
+          <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">登录后可同步机会、生成草稿并发布。</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <input
+              value={loginUsername}
+              onChange={(event) => setLoginUsername(event.target.value)}
+              placeholder="登录账号"
+              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
+            />
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(event) => setLoginPassword(event.target.value)}
+              placeholder="登录密码"
+              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void handleLogin();
+                }
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleLogin()}
+            disabled={authSubmitting}
+            className="mt-4 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 dark:bg-white dark:text-black"
+          >
+            {authSubmitting ? '登录中...' : '登录'}
+          </button>
+          {banner && (
+            <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-medium ${bannerClass(banner.type)}`}>
+              {banner.text}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="mx-auto max-w-[1440px]">
       <div className="rounded-[2.5rem] border border-black/[0.05] bg-white/75 p-6 shadow-[0_8px_40px_rgb(0,0,0,0.04)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1c1c1e]/75 lg:p-8">
@@ -545,24 +693,18 @@ export default function ContentPipelinePanel() {
             >
               {loadingOpportunities ? '加载中...' : '刷新机会'}
             </button>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              disabled={authSubmitting}
+              className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
+            >
+              {authSubmitting ? '退出中...' : `退出登录（${authUser}）`}
+            </button>
           </div>
         </div>
 
-        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <input
-            type="password"
-            value={apiSecret}
-            onChange={(event) => setApiSecret(event.target.value)}
-            placeholder="PIPELINE_API_SECRET"
-            className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-          />
-          <input
-            type="password"
-            value={syncSecret}
-            onChange={(event) => setSyncSecret(event.target.value)}
-            placeholder="PIPELINE_SYNC_SECRET"
-            className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-          />
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <input
             type="number"
             min={1}
@@ -654,7 +796,7 @@ export default function ContentPipelinePanel() {
 
           {accounts.length === 0 && (
             <p className="mb-3 text-xs text-amber-700 dark:text-amber-300">
-              尚未配置账号。请先前往“账号定位设置”页创建账号（需 `PIPELINE_API_SECRET`），保存后刷新本页。
+              尚未配置账号。请先前往“账号定位设置”页创建账号，保存后刷新本页。
             </p>
           )}
 

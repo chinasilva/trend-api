@@ -42,7 +42,7 @@ curl http://localhost:3000/api/trends/weixinarticle
 2. `内容生产`：进行同步机会、生成草稿、提交发布任务
 
 内容生产模式操作顺序：
-1. 输入 `PIPELINE_API_SECRET` 与 `PIPELINE_SYNC_SECRET`
+1. 先使用已配置的控制台账号密码登录（不支持注册）
 2. 打开“账号定位设置”页创建账号（首版支持新增、编辑、激活/停用）
 3. 在“账号定位”卡片确认并保存账号策略（全局生效）
 4. 返回首页点击“同步机会”
@@ -66,8 +66,13 @@ curl http://localhost:3000/api/trends/weixinarticle
 
 最低要求：
 1. `DATABASE_URL`
-2. `PIPELINE_API_SECRET`
-3. `PIPELINE_SYNC_SECRET`
+2. `PIPELINE_ADMIN_USERNAME`
+3. `PIPELINE_ADMIN_PASSWORD`
+
+服务端调用（可选保留）：
+1. `PIPELINE_API_SECRET`
+2. `PIPELINE_SYNC_SECRET`
+3. `PIPELINE_AUTH_SECRET`
 
 内容生产相关（按需）：
 1. `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`

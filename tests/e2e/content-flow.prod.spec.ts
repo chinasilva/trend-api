@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 
-const apiSecret = process.env.PLAYWRIGHT_PIPELINE_API_SECRET || process.env.PIPELINE_API_SECRET || '';
-const syncSecret = process.env.PLAYWRIGHT_PIPELINE_SYNC_SECRET || process.env.PIPELINE_SYNC_SECRET || '';
+const username =
+  process.env.PLAYWRIGHT_PIPELINE_USERNAME || process.env.PIPELINE_ADMIN_USERNAME || '';
+const password =
+  process.env.PLAYWRIGHT_PIPELINE_PASSWORD || process.env.PIPELINE_ADMIN_PASSWORD || '';
 
 test.describe('production content console flow', () => {
-  test.skip(!apiSecret || !syncSecret, 'Missing pipeline secrets for production e2e.');
+  test.skip(!username || !password, 'Missing pipeline login credentials for production e2e.');
 
   test('account apply -> profile -> opportunity -> draft', async ({ page }) => {
     test.setTimeout(10 * 60 * 1000);
@@ -16,15 +18,13 @@ test.describe('production content console flow', () => {
     await expect(page.getByRole('button', { name: '内容生产' })).toBeVisible({ timeout: 120_000 });
 
     await page.getByRole('button', { name: '内容生产' }).click();
+    await page.getByPlaceholder('登录账号').fill(username);
+    await page.getByPlaceholder('登录密码').fill(password);
+    await page.getByRole('button', { name: '登录' }).click();
     await expect(page.getByRole('heading', { name: '内容生产操作台' })).toBeVisible();
-
-    await page.getByPlaceholder('PIPELINE_API_SECRET').first().fill(apiSecret);
-    await page.getByPlaceholder('PIPELINE_SYNC_SECRET').fill(syncSecret);
 
     await page.getByRole('link', { name: '账号设置页' }).click();
     await expect(page).toHaveURL(/\/accounts\/settings/);
-
-    await page.getByPlaceholder('PIPELINE_API_SECRET').fill(apiSecret);
     await expect(page.getByRole('button', { name: '保存账号信息' })).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole('button', { name: '新建账号' }).click();
@@ -55,9 +55,6 @@ test.describe('production content console flow', () => {
 
     await page.getByRole('button', { name: '内容生产' }).click();
     await expect(page.getByRole('heading', { name: '内容生产操作台' })).toBeVisible();
-
-    await page.getByPlaceholder('PIPELINE_API_SECRET').first().fill(apiSecret);
-    await page.getByPlaceholder('PIPELINE_SYNC_SECRET').fill(syncSecret);
 
     await page.getByRole('button', { name: '同步机会' }).click();
     await page

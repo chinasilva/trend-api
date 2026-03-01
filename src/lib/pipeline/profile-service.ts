@@ -221,11 +221,20 @@ function isMissingProfileStorageError(error: unknown) {
   const table = typeof prismaError?.meta?.table === 'string' ? prismaError.meta.table : '';
   const combined = `${table} ${message}`;
 
-  if (prismaError?.code === 'P2021' && /(AccountProfile|AccountProfileVersion)/.test(combined)) {
+  if (
+    (prismaError?.code === 'P2021' || prismaError?.code === 'P2022') &&
+    /(AccountProfile|AccountProfileVersion)/.test(combined)
+  ) {
     return true;
   }
 
-  return /table .*AccountProfile/i.test(message) || /table .*AccountProfileVersion/i.test(message);
+  return (
+    /table .*AccountProfile/i.test(message) ||
+    /table .*AccountProfileVersion/i.test(message) ||
+    /column .*AccountProfile/i.test(message) ||
+    /column .*AccountProfileVersion/i.test(message) ||
+    /DbHandler exited/i.test(message)
+  );
 }
 
 async function getAccountWithCategories(accountId: string) {
@@ -247,24 +256,10 @@ async function getAccountWithCategories(accountId: string) {
   return account;
 }
 
-function toFallbackProfileData(accountId: string, input: AccountProfileInput): AccountProfileData {
-  const now = new Date().toISOString();
-  return {
-    id: `fallback-${accountId}`,
-    accountId,
-    ...sanitizeProfileInput(input),
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-async function buildFallbackProfileData(accountId: string): Promise<AccountProfileData> {
-  const account = await getAccountWithCategories(accountId);
-  const input = buildDefaultProfile({
-    accountName: account.name,
-    categoryNames: account.categories.map((item) => item.category.name),
-  });
-  return toFallbackProfileData(accountId, input);
+function toProfileStorageUnavailableError() {
+  return new Error(
+    '账号定位存储不可用，请先执行数据库迁移（npm run db:push 或 npm run db:migrate）后重试。'
+  );
 }
 
 async function persistVersion(
@@ -385,7 +380,7 @@ export async function getOrCreateAccountProfile(accountId: string): Promise<Acco
     return toProfileData(profile);
   } catch (error) {
     if (isMissingProfileStorageError(error)) {
-      return buildFallbackProfileData(accountId);
+      throw toProfileStorageUnavailableError();
     }
     throw error;
   }
@@ -413,10 +408,7 @@ export async function getAccountProfileWithVersions(accountId: string): Promise<
     };
   } catch (error) {
     if (isMissingProfileStorageError(error)) {
-      return {
-        profile,
-        versions: [],
-      };
+      throw toProfileStorageUnavailableError();
     }
     throw error;
   }
@@ -578,10 +570,7 @@ export async function updateAccountProfile(
     };
   } catch (error) {
     if (isMissingProfileStorageError(error)) {
-      return {
-        profile: toFallbackProfileData(accountId, next),
-        versions: [],
-      };
+      throw toProfileStorageUnavailableError();
     }
     throw error;
   }
@@ -606,7 +595,7 @@ export async function rollbackAccountProfile(
     return updateAccountProfile(accountId, snapshot);
   } catch (error) {
     if (isMissingProfileStorageError(error)) {
-      throw new Error('Profile version rollback is unavailable in current database.');
+      throw toProfileStorageUnavailableError();
     }
     throw error;
   }
