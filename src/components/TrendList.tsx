@@ -46,7 +46,7 @@ export default function TrendList({ trends, platform }: TrendListProps) {
             href={item.url || '#'}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-4 px-4 py-3.5 rounded-[1.25rem] hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-all duration-300 group"
+            className="flex items-center gap-4 px-4 py-3 rounded-[1.25rem] hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-all duration-300 group min-h-[68px]"
           >
             <div
               className={`flex-shrink-0 w-[34px] h-[34px] flex items-center justify-center text-[14px] font-semibold rounded-full shadow-sm transition-transform group-hover:scale-105 ${
@@ -61,21 +61,21 @@ export default function TrendList({ trends, platform }: TrendListProps) {
             >
               {item.rank}
             </div>
-            <div className="flex-1 min-w-0 flex flex-col justify-center">
+            <div className="flex-1 min-w-0 flex flex-col justify-center py-0.5">
               <h3 className="text-[15px] font-medium text-gray-900 dark:text-gray-100 leading-snug truncate group-hover:text-[#007AFF] dark:group-hover:text-[#0A84FF] transition-colors">
                 {item.title}
               </h3>
-              {item.description && (
-                <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-1 line-clamp-1 leading-relaxed opacity-80">
-                  {item.description}
-                </p>
-              )}
+              <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1 leading-relaxed opacity-80 min-h-[1.2em]">
+                {item.description || ''}
+              </p>
             </div>
-            {item.hotValue && (
-              <span className="flex-shrink-0 text-[13px] font-medium text-gray-400 dark:text-gray-500 tabular-nums bg-black/[0.02] dark:bg-white/[0.02] px-2 py-1 rounded-md">
-                {formatHotValue(item.hotValue)}
-              </span>
-            )}
+            <div className="flex-shrink-0 w-[64px] flex justify-end">
+              {item.hotValue ? (
+                <span className="text-[13px] font-medium text-gray-400 dark:text-gray-500 tabular-nums bg-black/[0.02] dark:bg-white/[0.02] px-2 py-1 rounded-md">
+                  {formatHotValue(item.hotValue)}
+                </span>
+              ) : null}
+            </div>
           </a>
         ))}
       </div>
