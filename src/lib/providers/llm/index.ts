@@ -20,6 +20,16 @@ export interface LLMProvider {
 type LLMApiStyle = 'chat-completions' | 'responses';
 type LLMAuthMode = 'bearer' | 'api-key';
 
+class LLMHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string
+  ) {
+    super(`LLM request failed: ${status} ${body}`);
+    this.name = 'LLMHttpError';
+  }
+}
+
 function toStringArray(value: unknown) {
   if (!Array.isArray(value)) {
     return [] as string[];
@@ -154,8 +164,17 @@ class OpenAICompatibleProvider implements LLMProvider {
     return headers;
   }
 
+  private buildEndpoint(path: '/chat/completions' | '/responses') {
+    const normalized = this.baseUrl.replace(/\/$/, '');
+    if (normalized.endsWith('/chat/completions') || normalized.endsWith('/responses')) {
+      return normalized;
+    }
+
+    return `${normalized}${path}`;
+  }
+
   private async callChatCompletions(input: GenerateWithLLMInput) {
-    const endpoint = `${this.baseUrl.replace(/\/$/, '')}/chat/completions`;
+    const endpoint = this.buildEndpoint('/chat/completions');
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: this.buildHeaders(),
@@ -174,7 +193,7 @@ class OpenAICompatibleProvider implements LLMProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`LLM request failed: ${response.status} ${text}`);
+      throw new LLMHttpError(response.status, text);
     }
 
     const json = (await response.json()) as {
@@ -191,7 +210,7 @@ class OpenAICompatibleProvider implements LLMProvider {
   }
 
   private async callResponses(input: GenerateWithLLMInput) {
-    const endpoint = `${this.baseUrl.replace(/\/$/, '')}/responses`;
+    const endpoint = this.buildEndpoint('/responses');
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: this.buildHeaders(),
@@ -218,7 +237,7 @@ class OpenAICompatibleProvider implements LLMProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`LLM request failed: ${response.status} ${text}`);
+      throw new LLMHttpError(response.status, text);
     }
 
     const json = (await response.json()) as Record<string, unknown>;
@@ -234,10 +253,24 @@ class OpenAICompatibleProvider implements LLMProvider {
 
   async generate(input: GenerateWithLLMInput): Promise<LLMGeneratedDraft> {
     if (this.apiStyle === 'responses') {
-      return this.callResponses(input);
+      try {
+        return await this.callResponses(input);
+      } catch (error) {
+        if (error instanceof LLMHttpError && error.status === 404) {
+          return this.callChatCompletions(input);
+        }
+        throw error;
+      }
     }
 
-    return this.callChatCompletions(input);
+    try {
+      return await this.callChatCompletions(input);
+    } catch (error) {
+      if (error instanceof LLMHttpError && error.status === 404) {
+        return this.callResponses(input);
+      }
+      throw error;
+    }
   }
 }
 

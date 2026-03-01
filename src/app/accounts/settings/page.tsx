@@ -3,6 +3,12 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  fetchPipelineSession,
+  loginPipeline,
+  logoutPipeline,
+  SESSION_AUTH_PLACEHOLDER,
+} from '@/lib/client/pipeline-auth';
+import {
   createAccount,
   getAccountProfile,
   listAccounts,
@@ -133,6 +139,13 @@ function formatTime(value: string) {
 
 export default function AccountSettingsPage() {
   const [apiSecret, setApiSecret] = useState('');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authUser, setAuthUser] = useState<string | null>(null);
+  const [authMessage, setAuthMessage] = useState('');
+
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [creatingAccount, setCreatingAccount] = useState(false);
@@ -148,6 +161,72 @@ export default function AccountSettingsPage() {
   const [savingAccount, setSavingAccount] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [rollingVersionId, setRollingVersionId] = useState<string | null>(null);
+
+  const loadSession = useCallback(async () => {
+    setAuthChecking(true);
+    try {
+      const session = await fetchPipelineSession();
+      if (session.authenticated) {
+        setAuthUser(session.username || 'admin');
+        setApiSecret(SESSION_AUTH_PLACEHOLDER);
+      } else {
+        setAuthUser(null);
+        setApiSecret('');
+      }
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : '登录状态校验失败');
+      setAuthUser(null);
+      setApiSecret('');
+    } finally {
+      setAuthChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
+
+  async function handleLogin() {
+    const username = loginUsername.trim();
+    if (!username || !loginPassword) {
+      setAuthMessage('请输入账号和密码');
+      return;
+    }
+
+    setAuthSubmitting(true);
+    setAuthMessage('');
+    try {
+      const session = await loginPipeline(username, loginPassword);
+      setAuthUser(session.username || username);
+      setApiSecret(SESSION_AUTH_PLACEHOLDER);
+      setLoginPassword('');
+      setMessage('');
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : '登录失败');
+      setAuthUser(null);
+      setApiSecret('');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleLogout() {
+    setAuthSubmitting(true);
+    setAuthMessage('');
+    try {
+      await logoutPipeline();
+      setAuthUser(null);
+      setApiSecret('');
+      setAccounts([]);
+      setSelectedAccountId('');
+      setVersions([]);
+      setMessage('');
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : '退出登录失败');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
 
   const reloadAccounts = useCallback(
     async (preferredAccountId?: string) => {
@@ -236,7 +315,7 @@ export default function AccountSettingsPage() {
 
   async function handleSaveAccount() {
     if (!apiSecret.trim()) {
-      setMessage('请输入 API 密钥');
+      setMessage('请先登录');
       return;
     }
 
@@ -272,7 +351,7 @@ export default function AccountSettingsPage() {
 
   async function handleSaveProfile() {
     if (!apiSecret.trim() || !selectedAccountId) {
-      setMessage('请输入 API 密钥并选择账号');
+      setMessage('请先登录并选择账号');
       return;
     }
 
@@ -292,7 +371,7 @@ export default function AccountSettingsPage() {
 
   async function handleRollback(versionId: string) {
     if (!apiSecret.trim() || !selectedAccountId) {
-      setMessage('请输入 API 密钥并选择账号');
+      setMessage('请先登录并选择账号');
       return;
     }
 
@@ -310,6 +389,60 @@ export default function AccountSettingsPage() {
     }
   }
 
+  if (authChecking) {
+    return (
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        <p className="text-sm text-gray-600 dark:text-gray-300">正在校验登录状态...</p>
+      </main>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        <div className="mb-4 flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">账号与定位设置</h1>
+          <Link href="/" className="text-sm text-blue-600 underline">
+            返回首页
+          </Link>
+        </div>
+
+        <div className="space-y-4 rounded-3xl border border-black/[0.08] bg-white p-5 dark:border-white/[0.08] dark:bg-[#1c1c1e]">
+          <p className="text-sm text-gray-600 dark:text-gray-300">请先登录后再进行账号与定位管理。</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <input
+              value={loginUsername}
+              onChange={(event) => setLoginUsername(event.target.value)}
+              placeholder="登录账号"
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+            />
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(event) => setLoginPassword(event.target.value)}
+              placeholder="登录密码"
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void handleLogin();
+                }
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleLogin()}
+            disabled={authSubmitting}
+            className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
+          >
+            {authSubmitting ? '登录中...' : '登录'}
+          </button>
+          {authMessage && <p className="text-sm text-red-600 dark:text-red-300">{authMessage}</p>}
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-4 flex items-center justify-between">
@@ -320,13 +453,17 @@ export default function AccountSettingsPage() {
       </div>
 
       <div className="space-y-4 rounded-3xl border border-black/[0.08] bg-white p-5 dark:border-white/[0.08] dark:bg-[#1c1c1e]">
-        <input
-          type="password"
-          value={apiSecret}
-          onChange={(event) => setApiSecret(event.target.value)}
-          placeholder="PIPELINE_API_SECRET"
-          className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-        />
+        <div className="flex items-center justify-between rounded-2xl border border-black/[0.08] px-4 py-2.5 text-xs dark:border-white/[0.08]">
+          <span>已登录账号：{authUser}</span>
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            disabled={authSubmitting}
+            className="rounded-full border border-black/10 px-3 py-1 dark:border-white/10"
+          >
+            {authSubmitting ? '退出中...' : '退出登录'}
+          </button>
+        </div>
 
         <section className="space-y-3 rounded-2xl border border-black/[0.08] p-4 dark:border-white/[0.08]">
           <div className="flex items-center justify-between">
