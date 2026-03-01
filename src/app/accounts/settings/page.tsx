@@ -136,6 +136,7 @@ export default function AccountSettingsPage() {
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [creatingAccount, setCreatingAccount] = useState(false);
+  const [manualCreateMode, setManualCreateMode] = useState(false);
   const [accountForm, setAccountForm] = useState<AccountFormState>(EMPTY_ACCOUNT_FORM);
 
   const [profileForm, setProfileForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM);
@@ -160,9 +161,16 @@ export default function AccountSettingsPage() {
       if (items.length === 0) {
         setSelectedAccountId('');
         setCreatingAccount(true);
+        setManualCreateMode(true);
         setAccountForm(EMPTY_ACCOUNT_FORM);
         setProfileForm(EMPTY_PROFILE_FORM);
         setVersions([]);
+        return;
+      }
+
+      if (manualCreateMode && !preferredAccountId) {
+        setSelectedAccountId('');
+        setCreatingAccount(true);
         return;
       }
 
@@ -170,9 +178,10 @@ export default function AccountSettingsPage() {
       const picked = items.find((item) => item.id === preferId) || items[0];
       setSelectedAccountId(picked.id);
       setCreatingAccount(false);
+      setManualCreateMode(false);
       setAccountForm(mapAccountForm(picked));
     },
-    [apiSecret]
+    [apiSecret, manualCreateMode]
   );
 
   useEffect(() => {
@@ -199,6 +208,7 @@ export default function AccountSettingsPage() {
     const picked = accounts.find((item) => item.id === selectedAccountId);
     if (picked) {
       setCreatingAccount(false);
+      setManualCreateMode(false);
       setAccountForm(mapAccountForm(picked));
     }
   }, [accounts, selectedAccountId]);
@@ -325,6 +335,7 @@ export default function AccountSettingsPage() {
               type="button"
               onClick={() => {
                 setCreatingAccount(true);
+                setManualCreateMode(true);
                 setSelectedAccountId('');
                 setAccountForm(EMPTY_ACCOUNT_FORM);
                 setProfileForm(EMPTY_PROFILE_FORM);
@@ -343,6 +354,7 @@ export default function AccountSettingsPage() {
               onChange={(event) => {
                 setSelectedAccountId(event.target.value);
                 setCreatingAccount(false);
+                setManualCreateMode(false);
               }}
               className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
             >
