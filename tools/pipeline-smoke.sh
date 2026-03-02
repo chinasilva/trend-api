@@ -16,25 +16,31 @@ if [[ -z "$ACCOUNT_ID" ]]; then
   exit 1
 fi
 
-echo "== 1) sync opportunities (24h/3d/7d) =="
-SYNC_RESPONSE=$(curl -sS -X POST "$API_BASE/api/pipeline/opportunities/sync" \
-  -H "Content-Type: application/json" \
-  -H "x-pipeline-secret: $PIPELINE_SYNC_SECRET" \
-  -d '{"windows":[{"label":"24h","hours":24,"weight":0.65},{"label":"3d","hours":72,"weight":0.25},{"label":"7d","hours":168,"weight":0.10}]}'
-)
-printf '%s\n' "$SYNC_RESPONSE" | jq .
-
-echo "== 2) auto-generate draft =="
-AUTO_RESPONSE=$(curl -sS -X POST "$API_BASE/api/drafts/auto-generate" \
+echo "== 1) compute realtime opportunities =="
+COMPUTE_RESPONSE=$(curl -sS -X POST "$API_BASE/api/pipeline/opportunities/realtime/compute" \
   -H "Content-Type: application/json" \
   -H "x-pipeline-secret: $PIPELINE_SECRET" \
-  -d "{\"accountId\":\"$ACCOUNT_ID\",\"triggerMode\":\"manual\"}"
+  -d "{\"accountId\":\"$ACCOUNT_ID\",\"topN\":50,\"refresh\":true}"
 )
-printf '%s\n' "$AUTO_RESPONSE" | jq .
+printf '%s\n' "$COMPUTE_RESPONSE" | jq .
 
-DRAFT_ID=$(printf '%s' "$AUTO_RESPONSE" | jq -r '.data.draftId // empty')
+SESSION_ID=$(printf '%s' "$COMPUTE_RESPONSE" | jq -r '.data.sessionId // empty')
+if [[ -z "$SESSION_ID" ]]; then
+  echo "realtime compute did not return sessionId"
+  exit 1
+fi
+
+echo "== 2) generate realtime draft =="
+GENERATE_RESPONSE=$(curl -sS -X POST "$API_BASE/api/pipeline/opportunities/realtime/generate" \
+  -H "Content-Type: application/json" \
+  -H "x-pipeline-secret: $PIPELINE_SECRET" \
+  -d "{\"accountId\":\"$ACCOUNT_ID\",\"sessionId\":\"$SESSION_ID\"}"
+)
+printf '%s\n' "$GENERATE_RESPONSE" | jq .
+
+DRAFT_ID=$(printf '%s' "$GENERATE_RESPONSE" | jq -r '.data.draft.draftId // empty')
 if [[ -z "$DRAFT_ID" ]]; then
-  echo "auto-generate did not return draftId"
+  echo "realtime generate did not return draftId"
   exit 1
 fi
 

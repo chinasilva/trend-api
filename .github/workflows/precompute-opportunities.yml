@@ -16,6 +16,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [ -z "${API_URL:-}" ]; then
+            echo "API_URL secret is missing"
+            exit 1
+          fi
+
+          if [ -z "${PIPELINE_SYNC_SECRET:-}" ]; then
+            echo "PIPELINE_SYNC_SECRET secret is missing"
+            exit 1
+          fi
+
           HTTP_CODE=$(curl -sS -o response.json -w "%{http_code}" -X POST "${API_URL}/api/pipeline/opportunities/precompute" \
             -H "Content-Type: application/json" \
             -H "x-pipeline-secret: ${PIPELINE_SYNC_SECRET}" \
