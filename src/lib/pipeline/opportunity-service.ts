@@ -581,13 +581,25 @@ export async function syncOpportunities(
   const [accounts, mergedClusters] = await Promise.all([
     prisma.account.findMany({
       where: { isActive: true },
-      include: {
+      select: {
+        id: true,
         categories: {
-          include: {
-            category: true,
+          select: {
+            category: {
+              select: {
+                keywords: true,
+              },
+            },
           },
         },
-        profile: true,
+        profile: {
+          select: {
+            audience: true,
+            growthGoal: true,
+            tone: true,
+            painPoints: true,
+          },
+        },
       },
     }),
     Promise.resolve(mergeWindowClusters(windowResults.map((item) => ({ label: item.label, clusters: item.clusters })))),

@@ -297,6 +297,29 @@ function isMissingProfileStorageError(error: unknown) {
   );
 }
 
+function isMissingAccountAutomationColumnError(error: unknown) {
+  const prismaError = error as PrismaErrorLike | undefined;
+  const code = prismaError?.code || '';
+  const message = prismaError?.message || '';
+  const table = typeof prismaError?.meta?.table === 'string' ? prismaError.meta.table : '';
+  const column = typeof prismaError?.meta?.column === 'string' ? prismaError.meta.column : '';
+  const combined = `${table} ${column} ${message}`;
+  const missingColumnsPattern =
+    /(autoGenerateEnabled|autoGenerateTime|autoGenerateLeadMinutes|autoGenerateTimezone|lastAutoGenerateAt)/i;
+
+  if ((code === 'P2021' || code === 'P2022') && missingColumnsPattern.test(combined)) {
+    return true;
+  }
+
+  return (
+    /column .*autoGenerateEnabled/i.test(message) ||
+    /column .*autoGenerateTime/i.test(message) ||
+    /column .*autoGenerateLeadMinutes/i.test(message) ||
+    /column .*autoGenerateTimezone/i.test(message) ||
+    /column .*lastAutoGenerateAt/i.test(message)
+  );
+}
+
 async function getAccountWithCategories(accountId: string) {
   const account = await prisma.account.findUnique({
     where: { id: accountId },
@@ -475,36 +498,68 @@ export async function getAccountProfileWithVersions(accountId: string): Promise<
 }
 
 export async function listAccounts(options?: { includeInactive?: boolean }): Promise<AccountListItem[]> {
-  const accounts = await prisma.account.findMany({
-    where: options?.includeInactive ? undefined : { isActive: true },
-    orderBy: [
-      {
-        updatedAt: 'desc',
-      },
-      {
-        createdAt: 'desc',
-      },
-    ],
-    select: {
-      id: true,
-      name: true,
-      platform: true,
-      description: true,
-      isActive: true,
-      autoPublish: true,
-      dailyLimit: true,
-      autoGenerateEnabled: true,
-      autoGenerateTime: true,
-      autoGenerateLeadMinutes: true,
-      autoGenerateTimezone: true,
-      lastAutoGenerateAt: true,
+  const where = options?.includeInactive ? undefined : { isActive: true };
+  const orderBy = [
+    {
+      updatedAt: 'desc' as const,
     },
-  });
+    {
+      createdAt: 'desc' as const,
+    },
+  ];
 
-  return accounts.map((account) => ({
-    ...account,
-    lastAutoGenerateAt: account.lastAutoGenerateAt?.toISOString() ?? null,
-  }));
+  try {
+    const accounts = await prisma.account.findMany({
+      where,
+      orderBy,
+      select: {
+        id: true,
+        name: true,
+        platform: true,
+        description: true,
+        isActive: true,
+        autoPublish: true,
+        dailyLimit: true,
+        autoGenerateEnabled: true,
+        autoGenerateTime: true,
+        autoGenerateLeadMinutes: true,
+        autoGenerateTimezone: true,
+        lastAutoGenerateAt: true,
+      },
+    });
+
+    return accounts.map((account) => ({
+      ...account,
+      lastAutoGenerateAt: account.lastAutoGenerateAt?.toISOString() ?? null,
+    }));
+  } catch (error) {
+    if (!isMissingAccountAutomationColumnError(error)) {
+      throw error;
+    }
+
+    const legacyAccounts = await prisma.account.findMany({
+      where,
+      orderBy,
+      select: {
+        id: true,
+        name: true,
+        platform: true,
+        description: true,
+        isActive: true,
+        autoPublish: true,
+        dailyLimit: true,
+      },
+    });
+
+    return legacyAccounts.map((account) => ({
+      ...account,
+      autoGenerateEnabled: false,
+      autoGenerateTime: null,
+      autoGenerateLeadMinutes: 60,
+      autoGenerateTimezone: 'Asia/Shanghai',
+      lastAutoGenerateAt: null,
+    }));
+  }
 }
 
 export async function createAccount(input: AccountMutationInput): Promise<AccountListItem> {
