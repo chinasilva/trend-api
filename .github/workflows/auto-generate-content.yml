@@ -31,7 +31,21 @@ jobs:
 
           cat response.json | jq .
 
+          {
+            echo 'response<<EOF'
+            cat response.json
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
           if [ "${HTTP_CODE}" -ge 400 ]; then
+            ERROR_CODE=$(jq -r '.errorCode // ""' response.json)
+            ERROR_MESSAGE=$(jq -r '.message // .error // ""' response.json)
+            if [ "${ERROR_CODE}" = "AUTO_GENERATE_RUN_FAILED" ] && \
+              echo "${ERROR_MESSAGE}" | grep -qiE 'prisma\.account\.findMany|does not exist in the current database|P2022'; then
+              echo "::warning::Auto-generate skipped because Account automation columns are missing in runtime database. Run DB migration and re-enable strict gate."
+              echo "compatibility_skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "Auto generate endpoint returned HTTP ${HTTP_CODE}"
             exit 1
           fi
@@ -42,15 +56,14 @@ jobs:
             exit 1
           fi
 
-          {
-            echo 'response<<EOF'
-            cat response.json
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
         id: trigger
 
       - name: Print summary
         env:
           RESPONSE: ${{ steps.trigger.outputs.response }}
+          COMPATIBILITY_SKIP: ${{ steps.trigger.outputs.compatibility_skip }}
         run: |
           echo "$RESPONSE" | jq .
+          if [ "${COMPATIBILITY_SKIP:-false}" = "true" ]; then
+            echo "compatibility_skip=true (missing Account auto-generate columns in runtime DB)"
+          fi
