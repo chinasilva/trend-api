@@ -122,6 +122,18 @@ enum AutoGenerateTriggerMode {
   SCHEDULED
 }
 
+enum PrecomputeRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum RealtimeOpportunitySessionStatus {
+  OPEN
+  CONSUMED
+  EXPIRED
+}
+
 model Account {
   id          String   @id @default(cuid())
   name        String
@@ -149,6 +161,7 @@ model Account {
   synthesisReports TopicSynthesisReport[]
   researches TopicResearch[]
   autoGenerateJobs AutoGenerateJob[]
+  realtimeOpportunitySessions RealtimeOpportunitySession[]
 }
 
 model AccountProfile {
@@ -396,4 +409,60 @@ model AutoGenerateJob {
   draft Draft? @relation(fields: [draftId], references: [id], onDelete: SetNull)
 
   @@index([accountId, status, createdAt])
+}
+
+model OpportunityPrecomputeRun {
+  id                String            @id @default(cuid())
+  runKey            String            @unique
+  bucketAt          DateTime
+  status            PrecomputeRunStatus @default(RUNNING)
+  config            Json?
+  metrics           Json?
+  error             String?
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([bucketAt])
+  @@index([status, createdAt])
+}
+
+model RealtimeOpportunitySession {
+  id            String                           @id @default(cuid())
+  accountId     String
+  status        RealtimeOpportunitySessionStatus @default(OPEN)
+  windowConfig  Json?
+  topN          Int                              @default(50)
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime                         @default(now())
+  updatedAt     DateTime                         @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  items   RealtimeOpportunityItem[]
+
+  @@index([accountId, createdAt])
+  @@index([status, expiresAt])
+}
+
+model RealtimeOpportunityItem {
+  id            String   @id @default(cuid())
+  sessionId     String
+  fingerprint   String
+  title         String
+  keywords      Json?
+  evidences     Json?
+  windowScores  Json?
+  reasons       Json?
+  weightedScore Float
+  rank24h       Int?
+  rank72h       Int?
+  rank168h      Int?
+  createdAt     DateTime @default(now())
+
+  session RealtimeOpportunitySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, fingerprint])
+  @@index([sessionId, weightedScore])
 }

@@ -1,7 +1,8 @@
 import { createHash } from 'crypto';
-import { OpportunityStatus, Prisma } from '@prisma/client';
+import { OpportunityStatus, PrecomputeRunStatus, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import type {
+  OpportunityPrecomputeResult,
   OpportunityScoreResult,
   OpportunityWindowConfig,
   SyncOpportunitiesResult,
@@ -12,11 +13,23 @@ import type {
 const DEFAULT_WINDOW_HOURS = 2;
 const DEFAULT_MIN_SCORE = 45;
 const MAX_EVIDENCE_COUNT = 12;
+const SIGNAL_QUALITY_WEIGHT = 0.12;
+const DEFAULT_PRECOMPUTE_LOOKBACK_HOURS = 168;
+const DEFAULT_PRECOMPUTE_BUCKET_MINUTES = 30;
+const DEFAULT_PRECOMPUTE_TOP_N = 50;
+const PRECOMPUTE_LOCK_KEY_1 = 92141;
+const PRECOMPUTE_LOCK_KEY_2 = 3001;
 
 export const DEFAULT_OPPORTUNITY_WINDOWS: OpportunityWindowConfig[] = [
   { label: '24h', hours: 24, weight: 0.65 },
   { label: '3d', hours: 72, weight: 0.25 },
   { label: '7d', hours: 168, weight: 0.1 },
+];
+
+const PRECOMPUTE_WINDOW_TEMPLATES: OpportunityWindowConfig[] = [
+  { label: '24h', hours: 24, weight: 0.65 },
+  { label: '72h', hours: 72, weight: 0.25 },
+  { label: '168h', hours: 168, weight: 0.1 },
 ];
 
 const HIGH_RISK_TERMS = [
@@ -32,6 +45,24 @@ const HIGH_RISK_TERMS = [
   '诈骗',
   '仇恨',
 ];
+
+const SIGNAL_SOURCE_TYPE_BASE_SCORE: Record<string, number> = {
+  research_report: 28,
+  recruitment: 22,
+  gov_procurement: 22,
+  app_rank: 20,
+};
+
+export class OpportunityPrecomputeError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = 'OpportunityPrecomputeError';
+  }
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -83,6 +114,92 @@ function toKeywordArray(value: Prisma.JsonValue | null | undefined) {
     .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function toJsonObject(value: Prisma.JsonValue | null | undefined): Prisma.JsonObject | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Prisma.JsonObject;
+}
+
+function toStringArray(value: Prisma.JsonValue | null | undefined) {
+  if (!Array.isArray(value)) {
+    return [] as string[];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function readStringFromObject(obj: Prisma.JsonObject | null, key: string): string | undefined {
+  if (!obj) {
+    return undefined;
+  }
+  const value = obj[key];
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function extractKeywordTokens(input: string, limit = 6) {
+  const normalized = normalizeText(input);
+  if (!normalized) {
+    return [] as string[];
+  }
+
+  const bySpace = normalized.split(' ').filter((token) => token.length >= 2);
+  if (bySpace.length > 0) {
+    return Array.from(new Set(bySpace)).slice(0, limit);
+  }
+
+  const compact = normalized.replace(/\s+/g, '');
+  const tokens: string[] = [];
+  for (let i = 0; i < Math.min(compact.length - 1, limit * 2); i += 1) {
+    const token = compact.slice(i, i + 2);
+    if (token.length === 2) {
+      tokens.push(token);
+    }
+  }
+
+  return Array.from(new Set(tokens)).slice(0, limit);
+}
+
+function parseContentExtra(value: Prisma.JsonValue | null | undefined) {
+  const extra = toJsonObject(value);
+  const tagsZh = toStringArray(extra?.tagsZh).slice(0, 8);
+  const tags = toStringArray(extra?.tags).slice(0, 8);
+  const mergedTags = Array.from(new Set([...tagsZh, ...tags])).slice(0, 12);
+  const category = readStringFromObject(extra, 'category');
+  const sourceType = readStringFromObject(extra, 'sourceType');
+  const sourceName = readStringFromObject(extra, 'sourceName');
+  const summary =
+    readStringFromObject(extra, 'aiSummaryZh') ||
+    readStringFromObject(extra, 'summary') ||
+    readStringFromObject(extra, 'aiSummary');
+
+  const keywordHints = Array.from(
+    new Set(
+      [
+        ...mergedTags.flatMap((tag) => extractKeywordTokens(tag, 2)),
+        ...(category ? extractKeywordTokens(category, 3) : []),
+        ...(summary ? extractKeywordTokens(summary, 4) : []),
+      ].map((token) => token.toLowerCase())
+    )
+  ).slice(0, 10);
+
+  return {
+    tags: mergedTags,
+    category,
+    sourceType,
+    sourceName,
+    summary,
+    keywordHints,
+  };
 }
 
 function scoreClusterGrowth(items: Array<{ rank: number; hotValue: number | null }>) {
@@ -156,12 +273,15 @@ function scoreOpportunity(params: {
   latestSnapshotAt: Date;
   title: string;
   categoryScore: number;
+  signalQuality: number;
 }): OpportunityScoreResult {
   const baseHeat = clamp(params.growthScore, 0, 100);
   const crossSource = clamp((params.resonanceCount / 5) * 100, 0, 100);
   const momentum = clamp(params.growthScore * 0.8 + params.persistenceScore * 0.2, 0, 100);
   const ageMinutes = Math.max(0, (Date.now() - params.latestSnapshotAt.getTime()) / 60000);
   const freshness = clamp(100 * (1 - ageMinutes / 360), 0, 100);
+  const signalQuality = clamp(params.signalQuality, 0, 100);
+  const signalAdjustment = (signalQuality - 50) * SIGNAL_QUALITY_WEIGHT;
 
   const loweredTitle = params.title.toLowerCase();
   const hasHighRisk = HIGH_RISK_TERMS.some((term) => loweredTitle.includes(term));
@@ -173,6 +293,7 @@ function scoreOpportunity(params: {
     momentum * 0.2 +
     freshness * 0.15 +
     params.persistenceScore * 0.1 +
+    signalAdjustment +
     params.categoryScore -
     riskPenalty;
   const score = Math.round(clamp(rawScore, 0, 100));
@@ -183,6 +304,7 @@ function scoreOpportunity(params: {
     `momentum:${momentum.toFixed(1)}`,
     `freshness:${freshness.toFixed(1)}`,
     `persistence:${params.persistenceScore.toFixed(1)}`,
+    `signal-quality:${signalQuality.toFixed(1)}`,
     `category:${params.categoryScore.toFixed(1)}`,
   ];
 
@@ -191,6 +313,43 @@ function scoreOpportunity(params: {
   }
 
   return { score, reasons };
+}
+
+function scoreSignalQuality(
+  items: Array<{
+    platform: string;
+    sourceType?: string;
+    category?: string;
+    tags: string[];
+    summary?: string;
+    hotValue: number | null;
+  }>
+) {
+  const signalItems = items.filter((item) => item.platform === 'signal');
+  if (signalItems.length === 0) {
+    return 50;
+  }
+
+  const sourceTypes = new Set<string>();
+  const perItemScores = signalItems.map((item) => {
+    const sourceType = item.sourceType?.toLowerCase();
+    if (sourceType) {
+      sourceTypes.add(sourceType);
+    }
+
+    const sourceScore = sourceType ? (SIGNAL_SOURCE_TYPE_BASE_SCORE[sourceType] || 14) : 10;
+    const tagScore = Math.min(18, item.tags.length * 4);
+    const categoryScore = item.category ? 10 : 0;
+    const summaryScore = item.summary && item.summary.length >= 20 ? 14 : 0;
+    const hotValueScore = (item.hotValue ?? 0) > 0 ? 8 : 0;
+    const total = 20 + sourceScore + tagScore + categoryScore + summaryScore + hotValueScore;
+    return clamp(total, 0, 100);
+  });
+
+  const average = perItemScores.reduce((sum, value) => sum + value, 0) / perItemScores.length;
+  const diversityBonus = Math.min(10, Math.max(0, sourceTypes.size - 1) * 3);
+
+  return clamp(average + diversityBonus, 0, 100);
 }
 
 function categoryMatch(clusterKeywords: string[], accountKeywords: string[]) {
@@ -276,6 +435,11 @@ function toEvidence(
     rank: number;
     hotValue: number | null;
     createdAt: Date;
+    summary?: string;
+    category?: string;
+    tags: string[];
+    sourceType?: string;
+    sourceName?: string;
   }>
 ): TopicEvidence[] {
   return items.slice(0, MAX_EVIDENCE_COUNT).map((item) => ({
@@ -284,6 +448,11 @@ function toEvidence(
     url: item.url || undefined,
     rank: item.rank,
     hotValue: item.hotValue ?? undefined,
+    summary: item.summary,
+    category: item.category,
+    tags: item.tags.length > 0 ? item.tags : undefined,
+    sourceType: item.sourceType,
+    sourceName: item.sourceName,
     snapshotAt: item.createdAt.toISOString(),
   }));
 }
@@ -320,6 +489,11 @@ async function collectClusters(windowStart: Date, windowEnd: Date) {
         rank: number;
         hotValue: number | null;
         createdAt: Date;
+        summary?: string;
+        category?: string;
+        tags: string[];
+        sourceType?: string;
+        sourceName?: string;
       }>;
       latestSnapshotAt: Date;
     }
@@ -329,6 +503,13 @@ async function collectClusters(windowStart: Date, windowEnd: Date) {
     const title = snapshot.content.title;
     const fingerprint = createFingerprint(title);
     const current = grouped.get(fingerprint);
+    const contentExtra = parseContentExtra(snapshot.content.extra);
+    const itemKeywords = Array.from(
+      new Set([
+        ...extractKeywords(title),
+        ...contentExtra.keywordHints,
+      ])
+    );
 
     const item = {
       platform: snapshot.content.source.platform,
@@ -337,13 +518,18 @@ async function collectClusters(windowStart: Date, windowEnd: Date) {
       rank: snapshot.rank,
       hotValue: snapshot.hotValue,
       createdAt: snapshot.createdAt,
+      summary: contentExtra.summary,
+      category: contentExtra.category,
+      tags: contentExtra.tags,
+      sourceType: contentExtra.sourceType,
+      sourceName: contentExtra.sourceName,
     };
 
     if (!current) {
       grouped.set(fingerprint, {
         title,
         bestRank: snapshot.rank,
-        keywords: new Set(extractKeywords(title)),
+        keywords: new Set(itemKeywords),
         platforms: new Set([snapshot.content.source.platform]),
         items: [item],
         latestSnapshotAt: snapshot.createdAt,
@@ -352,7 +538,7 @@ async function collectClusters(windowStart: Date, windowEnd: Date) {
     }
 
     current.platforms.add(snapshot.content.source.platform);
-    extractKeywords(title).forEach((keyword) => current.keywords.add(keyword));
+    itemKeywords.forEach((keyword) => current.keywords.add(keyword));
     current.items.push(item);
 
     if (snapshot.createdAt > current.latestSnapshotAt) {
@@ -382,6 +568,7 @@ async function collectClusters(windowStart: Date, windowEnd: Date) {
     );
 
     const persistenceScore = scorePersistence(group.items, group.platforms.size);
+    const signalQuality = scoreSignalQuality(group.items);
 
     return {
       fingerprint,
@@ -391,6 +578,7 @@ async function collectClusters(windowStart: Date, windowEnd: Date) {
       resonanceCount: group.platforms.size,
       growthScore: clamp(baseHeat * 0.65 + momentum * 0.35, 0, 100),
       persistenceScore,
+      signalQuality,
       latestSnapshotAt: group.latestSnapshotAt,
       windowStart,
       windowEnd,
@@ -441,6 +629,186 @@ function normalizeWindows(
   }));
 }
 
+function resolvePrecomputeLookbackHours(input?: number) {
+  const fallback = Number(
+    process.env.OPPORTUNITY_PRECOMPUTE_LOOKBACK_HOURS || DEFAULT_PRECOMPUTE_LOOKBACK_HOURS
+  );
+  const raw = Number.isFinite(input as number) ? Number(input) : fallback;
+  if (!Number.isFinite(raw)) {
+    return DEFAULT_PRECOMPUTE_LOOKBACK_HOURS;
+  }
+  return Math.max(24, Math.min(24 * 7, Math.floor(raw)));
+}
+
+function resolvePrecomputeBucketMinutes() {
+  const value = Number(
+    process.env.OPPORTUNITY_PRECOMPUTE_BUCKET_MINUTES || DEFAULT_PRECOMPUTE_BUCKET_MINUTES
+  );
+  if (!Number.isFinite(value)) {
+    return DEFAULT_PRECOMPUTE_BUCKET_MINUTES;
+  }
+  return Math.max(5, Math.min(180, Math.floor(value)));
+}
+
+function resolvePrecomputeTopN(input?: number) {
+  const fallback = Number(process.env.OPPORTUNITY_PRECOMPUTE_TOP_N || DEFAULT_PRECOMPUTE_TOP_N);
+  const raw = Number.isFinite(input as number) ? Number(input) : fallback;
+  if (!Number.isFinite(raw)) {
+    return DEFAULT_PRECOMPUTE_TOP_N;
+  }
+  return Math.max(1, Math.min(200, Math.floor(raw)));
+}
+
+function buildPrecomputeWindows(lookbackHours: number) {
+  const windows = PRECOMPUTE_WINDOW_TEMPLATES.filter((window) => window.hours <= lookbackHours);
+  if (windows.length > 0) {
+    return normalizeWindows(windows);
+  }
+
+  return normalizeWindows([
+    {
+      label: `${lookbackHours}h`,
+      hours: lookbackHours,
+      weight: 1,
+    },
+  ]);
+}
+
+function floorToBucket(now: Date, bucketMinutes: number) {
+  const bucketMs = bucketMinutes * 60 * 1000;
+  const ts = now.getTime();
+  return new Date(Math.floor(ts / bucketMs) * bucketMs);
+}
+
+function buildPrecomputeRunKey(bucketAt: Date, lookbackHours: number, topN: number) {
+  return `precompute:${bucketAt.toISOString()}:w${lookbackHours}:n${topN}`;
+}
+
+function parseRunConfig(value: Prisma.JsonValue | null | undefined) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const obj = value as Record<string, unknown>;
+  const topN = Number(obj.topN);
+  const lookbackHours = Number(obj.lookbackHours);
+  const bucketMinutes = Number(obj.bucketMinutes);
+  if (!Number.isFinite(topN) || !Number.isFinite(lookbackHours) || !Number.isFinite(bucketMinutes)) {
+    return null;
+  }
+
+  return {
+    topN,
+    lookbackHours,
+    bucketMinutes,
+  };
+}
+
+function parseRunMetrics(value: Prisma.JsonValue | null | undefined) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const obj = value as Record<string, unknown>;
+  const read = (key: string) => {
+    const num = Number(obj[key]);
+    return Number.isFinite(num) ? num : 0;
+  };
+
+  return {
+    accountsTotal: read('accountsTotal'),
+    processed: read('processed'),
+    failed: read('failed'),
+    clustersUpserted: read('clustersUpserted'),
+    opportunitiesUpserted: read('opportunitiesUpserted'),
+    trimmedCount: read('trimmedCount'),
+    skippedAccounts: read('skippedAccounts'),
+    sourceCount: read('sourceCount'),
+  };
+}
+
+async function applyTopNLimitForActiveAccounts(topN: number) {
+  if (topN <= 0) {
+    return 0;
+  }
+
+  const updatedCount = await prisma.$executeRaw`
+    WITH ranked AS (
+      SELECT o.id,
+             ROW_NUMBER() OVER (
+               PARTITION BY o."accountId"
+               ORDER BY o.score DESC, o."updatedAt" DESC, o."createdAt" DESC
+             ) AS rn
+      FROM "Opportunity" o
+      INNER JOIN "Account" a
+        ON a.id = o."accountId"
+      WHERE o.status = 'NEW'::"OpportunityStatus"
+        AND a."isActive" = true
+    )
+    UPDATE "Opportunity" o
+    SET status = 'EXPIRED'::"OpportunityStatus",
+        "updatedAt" = NOW()
+    FROM ranked r
+    WHERE o.id = r.id
+      AND r.rn > ${topN}
+  `;
+
+  return Number(updatedCount) || 0;
+}
+
+function buildPrecomputeResult(params: {
+  run: {
+    id: string;
+    runKey: string;
+    bucketAt: Date;
+    status: PrecomputeRunStatus;
+    config: Prisma.JsonValue | null;
+    metrics: Prisma.JsonValue | null;
+    startedAt: Date | null;
+    finishedAt: Date | null;
+    error: string | null;
+  };
+  reused: boolean;
+  forced: boolean;
+  windowStart?: string;
+  windowEnd?: string;
+  durationMs?: number;
+  fallbackConfig: {
+    topN: number;
+    lookbackHours: number;
+    bucketMinutes: number;
+  };
+}): OpportunityPrecomputeResult {
+  const parsedConfig = parseRunConfig(params.run.config);
+  const parsedMetrics = parseRunMetrics(params.run.metrics);
+
+  return {
+    runId: params.run.id,
+    runKey: params.run.runKey,
+    bucketAt: params.run.bucketAt.toISOString(),
+    status: params.run.status,
+    reused: params.reused,
+    forced: params.forced,
+    config: parsedConfig || params.fallbackConfig,
+    metrics: parsedMetrics || {
+      accountsTotal: 0,
+      processed: 0,
+      failed: 0,
+      clustersUpserted: 0,
+      opportunitiesUpserted: 0,
+      trimmedCount: 0,
+      skippedAccounts: 0,
+      sourceCount: 0,
+    },
+    windowStart: params.windowStart,
+    windowEnd: params.windowEnd,
+    durationMs:
+      params.durationMs ??
+      (params.run.startedAt && params.run.finishedAt
+        ? Math.max(0, params.run.finishedAt.getTime() - params.run.startedAt.getTime())
+        : undefined),
+    errors: params.run.error ? [{ message: params.run.error }] : [],
+  };
+}
+
 interface LayeredCluster {
   fingerprint: string;
   title: string;
@@ -453,6 +821,7 @@ interface LayeredCluster {
       resonanceCount: number;
       growthScore: number;
       persistenceScore: number;
+      signalQuality: number;
       latestSnapshotAt: Date;
     }
   >;
@@ -468,6 +837,7 @@ function mergeWindowClusters(results: Array<{ label: string; clusters: TopicClus
         resonanceCount: cluster.resonanceCount,
         growthScore: cluster.growthScore,
         persistenceScore: cluster.persistenceScore,
+        signalQuality: cluster.signalQuality,
         latestSnapshotAt: cluster.latestSnapshotAt,
       };
 
@@ -528,6 +898,7 @@ function computeWeightedScore(params: {
       resonanceCount: layer.resonanceCount,
       growthScore: layer.growthScore,
       persistenceScore: layer.persistenceScore,
+      signalQuality: layer.signalQuality,
       latestSnapshotAt: layer.latestSnapshotAt,
       title: params.cluster.title,
       categoryScore: params.categoryScore,
@@ -536,6 +907,9 @@ function computeWeightedScore(params: {
     layerScores[window.label] = layerScore.score;
     weighted += layerScore.score * window.weight;
     reasons.push(`window:${window.label}:${layerScore.score.toFixed(1)}*${window.weight.toFixed(2)}`);
+    layerScore.reasons.forEach((reason) => {
+      reasons.push(`window:${window.label}:${reason}`);
+    });
   }
 
   return {
@@ -713,6 +1087,18 @@ export async function syncOpportunities(
         ...weightedScore.reasons,
       ];
 
+      const signalSourceTypes = Array.from(
+        new Set(
+          cluster.evidences
+            .filter((evidence) => evidence.platform === 'signal' && typeof evidence.sourceType === 'string')
+            .map((evidence) => (evidence.sourceType as string).trim())
+            .filter(Boolean)
+        )
+      );
+      if (signalSourceTypes.length > 0) {
+        reasons.push(`signal-source:${signalSourceTypes.join('|')}`);
+      }
+
       if (match.matched.length > 0) {
         reasons.push(`matched:${match.matched.join('|')}`);
       }
@@ -735,6 +1121,11 @@ export async function syncOpportunities(
 
       const layeredScore = {
         windows: weightedScore.layerScores,
+        signalQuality: windows.reduce<Record<string, number>>((acc, item) => {
+          const layer = cluster.windows[item.label];
+          acc[item.label] = layer ? Number(layer.signalQuality.toFixed(1)) : 0;
+          return acc;
+        }, {}),
         weights: windows.reduce<Record<string, number>>((acc, item) => {
           acc[item.label] = item.weight;
           return acc;
@@ -789,6 +1180,208 @@ export async function syncOpportunities(
     windowEnd: now.toISOString(),
     windows,
   };
+}
+
+export async function runOpportunityPrecompute(params?: {
+  topN?: number;
+  lookbackHours?: number;
+  force?: boolean;
+  now?: Date;
+}): Promise<OpportunityPrecomputeResult> {
+  const now = params?.now || new Date();
+  const lookbackHours = resolvePrecomputeLookbackHours(params?.lookbackHours);
+  const topN = resolvePrecomputeTopN(params?.topN);
+  const bucketMinutes = resolvePrecomputeBucketMinutes();
+  const bucketAt = floorToBucket(now, bucketMinutes);
+  const runKey = buildPrecomputeRunKey(bucketAt, lookbackHours, topN);
+  const forced = params?.force === true;
+
+  let locked = false;
+  let runRecord:
+    | {
+        id: string;
+        runKey: string;
+        bucketAt: Date;
+        status: PrecomputeRunStatus;
+        config: Prisma.JsonValue | null;
+        metrics: Prisma.JsonValue | null;
+        startedAt: Date | null;
+        finishedAt: Date | null;
+        error: string | null;
+      }
+    | null = null;
+  let accountsTotal = 0;
+
+  try {
+    const lockRows = await prisma.$queryRaw<Array<{ locked: boolean }>>`
+      SELECT pg_try_advisory_lock(${PRECOMPUTE_LOCK_KEY_1}, ${PRECOMPUTE_LOCK_KEY_2}) AS locked
+    `;
+    locked = lockRows[0]?.locked === true;
+
+    const fallbackConfig = {
+      topN,
+      lookbackHours,
+      bucketMinutes,
+    };
+
+    if (!locked) {
+      const latestRunning = await prisma.opportunityPrecomputeRun.findFirst({
+        where: {
+          status: PrecomputeRunStatus.RUNNING,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      if (latestRunning) {
+        return buildPrecomputeResult({
+          run: latestRunning,
+          reused: true,
+          forced,
+          fallbackConfig,
+        });
+      }
+
+      throw new OpportunityPrecomputeError(
+        'PRECOMPUTE_LOCK_CONFLICT',
+        'Another opportunity precompute run is in progress.',
+        409
+      );
+    }
+
+    const existing = await prisma.opportunityPrecomputeRun.findUnique({
+      where: {
+        runKey,
+      },
+    });
+
+    if (
+      existing &&
+      !forced &&
+      (existing.status === PrecomputeRunStatus.SUCCESS ||
+        existing.status === PrecomputeRunStatus.RUNNING)
+    ) {
+      return buildPrecomputeResult({
+        run: existing,
+        reused: true,
+        forced,
+        fallbackConfig,
+      });
+    }
+
+    if (existing) {
+      runRecord = await prisma.opportunityPrecomputeRun.update({
+        where: {
+          id: existing.id,
+        },
+        data: {
+          status: PrecomputeRunStatus.RUNNING,
+          config: fallbackConfig as unknown as Prisma.InputJsonValue,
+          metrics: Prisma.JsonNull,
+          error: null,
+          startedAt: now,
+          finishedAt: null,
+        },
+      });
+    } else {
+      runRecord = await prisma.opportunityPrecomputeRun.create({
+        data: {
+          runKey,
+          bucketAt,
+          status: PrecomputeRunStatus.RUNNING,
+          config: fallbackConfig as unknown as Prisma.InputJsonValue,
+          startedAt: now,
+        },
+      });
+    }
+
+    accountsTotal = await prisma.account.count({
+      where: {
+        isActive: true,
+      },
+    });
+
+    const windows = buildPrecomputeWindows(lookbackHours);
+    const precomputeResult = await syncOpportunities({ windows });
+    const trimmedCount = await applyTopNLimitForActiveAccounts(topN);
+    const finishedAt = new Date();
+    const durationMs = Math.max(0, finishedAt.getTime() - now.getTime());
+    const metrics = {
+      accountsTotal,
+      processed: accountsTotal,
+      failed: 0,
+      clustersUpserted: precomputeResult.clustersUpserted,
+      opportunitiesUpserted: precomputeResult.opportunitiesUpserted,
+      trimmedCount,
+      skippedAccounts: precomputeResult.skippedAccounts,
+      sourceCount: precomputeResult.sourceCount,
+    };
+
+    runRecord = await prisma.opportunityPrecomputeRun.update({
+      where: {
+        id: runRecord.id,
+      },
+      data: {
+        status: PrecomputeRunStatus.SUCCESS,
+        config: {
+          topN,
+          lookbackHours,
+          bucketMinutes,
+          windows,
+          windowStart: precomputeResult.windowStart,
+          windowEnd: precomputeResult.windowEnd,
+        } as unknown as Prisma.InputJsonValue,
+        metrics: metrics as unknown as Prisma.InputJsonValue,
+        error: null,
+        finishedAt,
+      },
+    });
+
+    return buildPrecomputeResult({
+      run: runRecord,
+      reused: false,
+      forced,
+      fallbackConfig: {
+        topN,
+        lookbackHours,
+        bucketMinutes,
+      },
+      windowStart: precomputeResult.windowStart,
+      windowEnd: precomputeResult.windowEnd,
+      durationMs,
+    });
+  } catch (error) {
+    if (runRecord) {
+      await prisma.opportunityPrecomputeRun.update({
+        where: {
+          id: runRecord.id,
+        },
+        data: {
+          status: PrecomputeRunStatus.FAILED,
+          metrics: {
+            accountsTotal,
+            processed: 0,
+            failed: accountsTotal,
+            clustersUpserted: 0,
+            opportunitiesUpserted: 0,
+            trimmedCount: 0,
+            skippedAccounts: 0,
+            sourceCount: 0,
+          } as Prisma.InputJsonValue,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          finishedAt: new Date(),
+        },
+      });
+    }
+    throw error;
+  } finally {
+    if (locked) {
+      await prisma.$queryRaw<Array<{ unlocked: boolean }>>`
+        SELECT pg_advisory_unlock(${PRECOMPUTE_LOCK_KEY_1}, ${PRECOMPUTE_LOCK_KEY_2}) AS unlocked
+      `;
+    }
+  }
 }
 
 export async function listOpportunities(params: {

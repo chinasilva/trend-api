@@ -11,6 +11,8 @@ import type {
   OpportunityListData,
   OpportunityStatus,
   PublishJobResult,
+  RealtimeOpportunityComputeData,
+  RealtimeOpportunityGenerateData,
   SyncOpportunitiesData,
 } from '@/types/content-ui';
 
@@ -76,6 +78,47 @@ export async function syncOpportunities(
     headers: buildHeaders(secret),
     body: JSON.stringify(body),
   });
+}
+
+export async function computeRealtimeOpportunities(
+  secret: string,
+  payload: {
+    accountId: string;
+    topN?: number;
+    refresh?: boolean;
+  }
+) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<RealtimeOpportunityComputeData>('/api/pipeline/opportunities/realtime/compute', {
+    method: 'POST',
+    headers: buildHeaders(secret),
+    body: JSON.stringify({
+      accountId: payload.accountId,
+      topN: payload.topN,
+      refresh: payload.refresh === true,
+    }),
+  });
+}
+
+export async function generateRealtimeDraft(
+  secret: string,
+  payload: {
+    accountId: string;
+    sessionId: string;
+  }
+) {
+  ensureSecret(secret, 'API 密钥');
+  return requestJson<RealtimeOpportunityGenerateData>(
+    '/api/pipeline/opportunities/realtime/generate',
+    {
+      method: 'POST',
+      headers: buildHeaders(secret),
+      body: JSON.stringify({
+        accountId: payload.accountId,
+        sessionId: payload.sessionId,
+      }),
+    }
+  );
 }
 
 export async function listOpportunities(

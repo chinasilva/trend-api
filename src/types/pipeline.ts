@@ -3,6 +3,7 @@ import {
   AutoGenerateTriggerMode,
   DraftStatus,
   OpportunityStatus,
+  PrecomputeRunStatus,
   PublishJobStatus,
   RiskLevel,
 } from '@prisma/client';
@@ -13,6 +14,11 @@ export interface TopicEvidence {
   url?: string;
   rank: number;
   hotValue?: number;
+  summary?: string;
+  category?: string;
+  tags?: string[];
+  sourceType?: string;
+  sourceName?: string;
   snapshotAt: string;
 }
 
@@ -24,6 +30,7 @@ export interface TopicClusterInput {
   resonanceCount: number;
   growthScore: number;
   persistenceScore: number;
+  signalQuality: number;
   latestSnapshotAt: Date;
   windowStart: Date;
   windowEnd: Date;
@@ -130,6 +137,63 @@ export interface SyncOpportunitiesResult {
   windowStart: string;
   windowEnd: string;
   windows: OpportunityWindowConfig[];
+}
+
+export interface RealtimeOpportunityWindowSummary {
+  label: '24h' | '72h' | '168h';
+  hours: number;
+  weight: number;
+}
+
+export interface RealtimeOpportunityComputeResult {
+  sessionId: string;
+  accountId: string;
+  reused: boolean;
+  expiresAt: string;
+  topN: number;
+  counts: {
+    snapshotCount: number;
+    clusterCount: number;
+    candidateCount: number;
+    storedCount: number;
+  };
+  windows: RealtimeOpportunityWindowSummary[];
+}
+
+export interface RealtimeOpportunityGenerateResult {
+  sessionId: string;
+  consumedAt: string;
+  opportunityId: string;
+  topicClusterId: string;
+  draft: DraftGenerationResult;
+}
+
+export interface OpportunityPrecomputeResult {
+  runId: string;
+  runKey: string;
+  bucketAt: string;
+  status: PrecomputeRunStatus;
+  reused: boolean;
+  forced: boolean;
+  config: {
+    topN: number;
+    lookbackHours: number;
+    bucketMinutes: number;
+  };
+  metrics: {
+    accountsTotal: number;
+    processed: number;
+    failed: number;
+    clustersUpserted: number;
+    opportunitiesUpserted: number;
+    trimmedCount: number;
+    skippedAccounts: number;
+    sourceCount: number;
+  };
+  windowStart?: string;
+  windowEnd?: string;
+  durationMs?: number;
+  errors: Array<{ message: string }>;
 }
 
 export interface TopicSynthesisSourceItem {

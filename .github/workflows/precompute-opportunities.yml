@@ -1,0 +1,44 @@
+name: Precompute Opportunities
+
+on:
+  schedule:
+    - cron: '5,35 * * * *'
+  workflow_dispatch:
+
+jobs:
+  precompute:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger opportunity precompute
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          PIPELINE_SYNC_SECRET: ${{ secrets.PIPELINE_SYNC_SECRET }}
+        run: |
+          set -euo pipefail
+
+          HTTP_CODE=$(curl -sS -o response.json -w "%{http_code}" -X POST "${API_URL}/api/pipeline/opportunities/precompute" \
+            -H "Content-Type: application/json" \
+            -H "x-pipeline-secret: ${PIPELINE_SYNC_SECRET}" \
+            -d '{}')
+
+          echo "HTTP_CODE=${HTTP_CODE}"
+          cat response.json | jq .
+
+          if [ "${HTTP_CODE}" -ge 400 ]; then
+            echo "Precompute endpoint returned HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+
+          SUCCESS=$(jq -r '.success // false' response.json)
+          if [ "${SUCCESS}" != "true" ]; then
+            echo "Precompute endpoint returned success=false"
+            exit 1
+          fi
+
+      - name: Print compact summary
+        run: |
+          RUN_KEY=$(jq -r '.data.runKey // "-"' response.json)
+          STATUS=$(jq -r '.data.status // "-"' response.json)
+          REUSED=$(jq -r '.data.reused // false' response.json)
+          UPSERTED=$(jq -r '.data.metrics.opportunitiesUpserted // 0' response.json)
+          echo "runKey=${RUN_KEY} status=${STATUS} reused=${REUSED} opportunitiesUpserted=${UPSERTED}"

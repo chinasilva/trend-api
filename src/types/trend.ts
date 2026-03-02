@@ -9,7 +9,8 @@ export type Platform =
   | 'weixinarticle'
   | 'bilibili'
   | 'xiaohongshu'
-  | 'weixinvideo';
+  | 'weixinvideo'
+  | 'signal';
 
 // 支持的平台列表
 export const PLATFORMS: Platform[] = [
@@ -23,6 +24,7 @@ export const PLATFORMS: Platform[] = [
   'bilibili',
   'xiaohongshu',
   'weixinvideo',
+  'signal',
 ];
 
 // 平台配置
@@ -30,7 +32,7 @@ export interface PlatformConfig {
   platform: Platform;
   name: string;
   icon: string;
-  dataSource: 'tianapi' | 'dailyhot' | 'custom';
+  dataSource: 'tianapi' | 'dailyhot' | 'custom' | 'signal';
 }
 
 // 平台配置映射
@@ -45,6 +47,7 @@ export const PLATFORM_CONFIGS: Record<Platform, PlatformConfig> = {
   bilibili: { platform: 'bilibili', name: 'B站', icon: '📺', dataSource: 'custom' },
   xiaohongshu: { platform: 'xiaohongshu', name: '小红书', icon: '📕', dataSource: 'custom' },
   weixinvideo: { platform: 'weixinvideo', name: '视频号', icon: '🎬', dataSource: 'custom' },
+  signal: { platform: 'signal', name: 'Signal', icon: '📡', dataSource: 'signal' },
 };
 
 // 热榜条目

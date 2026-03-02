@@ -371,7 +371,7 @@ export default function Home() {
         {activeMode === 'content' && (
           <div className="mb-14 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
             <div className="mb-4 text-center text-sm text-gray-500 dark:text-gray-400">
-              基于实时热榜数据同步机会、生成草稿并提交公众号发布任务
+              基于实时热榜数据计算候选、生成草稿并提交公众号发布任务
             </div>
             <ContentPipelinePanel />
           </div>

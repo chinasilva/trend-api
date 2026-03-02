@@ -39,6 +39,7 @@ export async function POST(request: Request) {
       fetchedCount: number;
       successCount: number;
       failCount: number;
+      skippedCount?: number;
       error?: string;
       dbError?: string;
       snapshotError?: string;
@@ -74,6 +75,7 @@ export async function POST(request: Request) {
             fetchedCount: data.length,
             successCount: snapshotResult.successCount,
             failCount: snapshotResult.failCount,
+            skippedCount: snapshotResult.skippedCount,
             dbError: trendSaveError,
           };
         } catch (snapshotError) {
@@ -108,6 +110,7 @@ export async function POST(request: Request) {
     const totalFetched = results.reduce((sum, r) => sum + r.fetchedCount, 0);
     const totalSuccess = results.reduce((sum, r) => sum + r.successCount, 0);
     const totalFailed = results.reduce((sum, r) => sum + r.failCount, 0);
+    const totalSkipped = results.reduce((sum, r) => sum + (r.skippedCount || 0), 0);
     const hasError = results.some((r) => r.error || r.dbError || r.snapshotError || r.failCount > 0);
 
     return NextResponse.json({
@@ -119,6 +122,7 @@ export async function POST(request: Request) {
           fetchedCount: totalFetched,
           successCount: totalSuccess,
           failCount: totalFailed,
+          skippedCount: totalSkipped,
         },
       },
       updatedAt: new Date().toISOString(),

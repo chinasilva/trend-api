@@ -64,7 +64,7 @@ export default function OpportunityList({
   if (opportunities.length === 0) {
     return (
       <div className="rounded-3xl border border-black/[0.05] dark:border-white/[0.08] bg-white/70 dark:bg-[#1c1c1e]/70 p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-        暂无机会。请先同步机会，或检查账号/赛道配置。
+        暂无机会。可先“获取候选并生成草稿”，或检查账号/赛道配置。
       </div>
     );
   }

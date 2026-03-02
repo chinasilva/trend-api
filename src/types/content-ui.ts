@@ -191,6 +191,35 @@ export interface SyncOpportunitiesData {
   }>;
 }
 
+export interface RealtimeOpportunityWindowSummary {
+  label: '24h' | '72h' | '168h';
+  hours: number;
+  weight: number;
+}
+
+export interface RealtimeOpportunityComputeData {
+  sessionId: string;
+  accountId: string;
+  reused: boolean;
+  expiresAt: string;
+  topN: number;
+  counts: {
+    snapshotCount: number;
+    clusterCount: number;
+    candidateCount: number;
+    storedCount: number;
+  };
+  windows: RealtimeOpportunityWindowSummary[];
+}
+
+export interface RealtimeOpportunityGenerateData {
+  sessionId: string;
+  consumedAt: string;
+  opportunityId: string;
+  topicClusterId: string;
+  draft: DraftGenerationData;
+}
+
 export interface PublishJobResult {
   id: string;
   status: PublishJobStatus;
