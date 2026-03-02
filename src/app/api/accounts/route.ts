@@ -21,6 +21,18 @@ function parseBody(raw: unknown): AccountMutationInput {
       typeof body.dailyLimit === 'number' && Number.isFinite(body.dailyLimit)
         ? body.dailyLimit
         : undefined,
+    autoGenerateEnabled:
+      typeof body.autoGenerateEnabled === 'boolean' ? body.autoGenerateEnabled : undefined,
+    autoGenerateTime:
+      typeof body.autoGenerateTime === 'string' || body.autoGenerateTime === null
+        ? body.autoGenerateTime
+        : undefined,
+    autoGenerateLeadMinutes:
+      typeof body.autoGenerateLeadMinutes === 'number' && Number.isFinite(body.autoGenerateLeadMinutes)
+        ? body.autoGenerateLeadMinutes
+        : undefined,
+    autoGenerateTimezone:
+      typeof body.autoGenerateTimezone === 'string' ? body.autoGenerateTimezone : undefined,
   };
 }
 

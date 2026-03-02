@@ -30,6 +30,10 @@ interface AccountFormState {
   isActive: boolean;
   autoPublish: boolean;
   dailyLimit: number;
+  autoGenerateEnabled: boolean;
+  autoGenerateTime: string;
+  autoGenerateLeadMinutes: number;
+  autoGenerateTimezone: string;
 }
 
 interface ProfileFormState {
@@ -50,6 +54,10 @@ const EMPTY_ACCOUNT_FORM: AccountFormState = {
   isActive: true,
   autoPublish: false,
   dailyLimit: 3,
+  autoGenerateEnabled: false,
+  autoGenerateTime: '09:00',
+  autoGenerateLeadMinutes: 60,
+  autoGenerateTimezone: 'Asia/Shanghai',
 };
 
 const EMPTY_PROFILE_FORM: ProfileFormState = {
@@ -82,6 +90,10 @@ function mapAccountForm(account: AccountListItem): AccountFormState {
     isActive: account.isActive,
     autoPublish: account.autoPublish,
     dailyLimit: account.dailyLimit,
+    autoGenerateEnabled: account.autoGenerateEnabled ?? false,
+    autoGenerateTime: account.autoGenerateTime || '09:00',
+    autoGenerateLeadMinutes: account.autoGenerateLeadMinutes ?? 60,
+    autoGenerateTimezone: account.autoGenerateTimezone || 'Asia/Shanghai',
   };
 }
 
@@ -93,6 +105,10 @@ function toAccountPayload(form: AccountFormState): AccountMutationInput {
     isActive: form.isActive,
     autoPublish: form.autoPublish,
     dailyLimit: Math.min(20, Math.max(1, Math.round(form.dailyLimit || 3))),
+    autoGenerateEnabled: form.autoGenerateEnabled,
+    autoGenerateTime: form.autoGenerateTime.trim() || null,
+    autoGenerateLeadMinutes: Math.min(360, Math.max(5, Math.round(form.autoGenerateLeadMinutes || 60))),
+    autoGenerateTimezone: form.autoGenerateTimezone.trim() || 'Asia/Shanghai',
   };
 }
 
@@ -137,6 +153,24 @@ function formatTime(value: string) {
   });
 }
 
+function displayText(value: string | undefined) {
+  if (typeof value !== 'string') {
+    return '-';
+  }
+
+  const normalized = value.trim();
+  return normalized || '-';
+}
+
+function displayList(value: string[] | undefined) {
+  if (!Array.isArray(value) || value.length === 0) {
+    return '-';
+  }
+
+  const normalized = value.map((item) => item.trim()).filter(Boolean);
+  return normalized.length > 0 ? normalized.join('；') : '-';
+}
+
 export default function AccountSettingsPage() {
   const [apiSecret, setApiSecret] = useState('');
   const [loginUsername, setLoginUsername] = useState('');
@@ -161,6 +195,7 @@ export default function AccountSettingsPage() {
   const [savingAccount, setSavingAccount] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [rollingVersionId, setRollingVersionId] = useState<string | null>(null);
+  const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 
   const loadSession = useCallback(async () => {
     setAuthChecking(true);
@@ -312,6 +347,17 @@ export default function AccountSettingsPage() {
 
     void loadProfile();
   }, [apiSecret, selectedAccountId]);
+
+  useEffect(() => {
+    if (!expandedVersionId) {
+      return;
+    }
+
+    const exists = versions.some((version) => version.id === expandedVersionId);
+    if (!exists) {
+      setExpandedVersionId(null);
+    }
+  }, [expandedVersionId, versions]);
 
   async function handleSaveAccount() {
     if (!apiSecret.trim()) {
@@ -561,6 +607,58 @@ export default function AccountSettingsPage() {
               />
               自动发布
             </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={accountForm.autoGenerateEnabled}
+                onChange={(event) =>
+                  setAccountForm((prev) => ({
+                    ...prev,
+                    autoGenerateEnabled: event.target.checked,
+                  }))
+                }
+              />
+              自动生成
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <input
+              type="time"
+              value={accountForm.autoGenerateTime}
+              onChange={(event) =>
+                setAccountForm((prev) => ({
+                  ...prev,
+                  autoGenerateTime: event.target.value,
+                }))
+              }
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+            />
+            <input
+              type="number"
+              min={5}
+              max={360}
+              value={accountForm.autoGenerateLeadMinutes}
+              onChange={(event) =>
+                setAccountForm((prev) => ({
+                  ...prev,
+                  autoGenerateLeadMinutes: Number(event.target.value) || 60,
+                }))
+              }
+              placeholder="提前分钟"
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+            />
+            <input
+              value={accountForm.autoGenerateTimezone}
+              onChange={(event) =>
+                setAccountForm((prev) => ({
+                  ...prev,
+                  autoGenerateTimezone: event.target.value,
+                }))
+              }
+              placeholder="时区（默认 Asia/Shanghai）"
+              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+            />
           </div>
 
           <button
@@ -661,16 +759,73 @@ export default function AccountSettingsPage() {
                 <p className="mb-2 text-sm font-semibold">最近版本（最多10条）</p>
                 <div className="space-y-2">
                   {versions.map((version) => (
-                    <div key={version.id} className="flex items-center justify-between text-xs">
-                      <span>{formatTime(version.createdAt)}</span>
-                      <button
-                        type="button"
-                        onClick={() => void handleRollback(version.id)}
-                        disabled={rollingVersionId === version.id}
-                        className="rounded-full border border-black/10 px-3 py-1 disabled:opacity-50 dark:border-white/10"
-                      >
-                        {rollingVersionId === version.id ? '回滚中' : '回滚'}
-                      </button>
+                    <div key={version.id} className="rounded-xl border border-black/[0.08] px-3 py-2 text-xs dark:border-white/[0.08]">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p>{formatTime(version.createdAt)}</p>
+                          <p className="truncate text-[11px] text-gray-500 dark:text-gray-300">
+                            读者：{displayText(version.profileSnapshot?.audience)} | 语气：
+                            {displayText(version.profileSnapshot?.tone)} | 目标：
+                            {displayText(version.profileSnapshot?.growthGoal)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedVersionId((current) => (current === version.id ? null : version.id))
+                            }
+                            className="rounded-full border border-black/10 px-3 py-1 dark:border-white/10"
+                          >
+                            {expandedVersionId === version.id ? '收起详情' : '查看详情'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleRollback(version.id)}
+                            disabled={rollingVersionId === version.id}
+                            className="rounded-full border border-black/10 px-3 py-1 disabled:opacity-50 dark:border-white/10"
+                          >
+                            {rollingVersionId === version.id ? '回滚中' : '回滚'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {expandedVersionId === version.id && (
+                        <div className="mt-2 space-y-1 border-t border-black/[0.06] pt-2 dark:border-white/[0.08]">
+                          <p>
+                            <span className="text-gray-500 dark:text-gray-300">目标读者：</span>
+                            {displayText(version.profileSnapshot?.audience)}
+                          </p>
+                          <p>
+                            <span className="text-gray-500 dark:text-gray-300">语气风格：</span>
+                            {displayText(version.profileSnapshot?.tone)}
+                          </p>
+                          <p>
+                            <span className="text-gray-500 dark:text-gray-300">增长目标：</span>
+                            {displayText(version.profileSnapshot?.growthGoal)}
+                          </p>
+                          <p>
+                            <span className="text-gray-500 dark:text-gray-300">目标字数：</span>
+                            {version.profileSnapshot?.preferredLength ?? '-'}
+                          </p>
+                          <p>
+                            <span className="text-gray-500 dark:text-gray-300">读者痛点：</span>
+                            {displayList(version.profileSnapshot?.painPoints)}
+                          </p>
+                          <p>
+                            <span className="text-gray-500 dark:text-gray-300">内容承诺：</span>
+                            {displayText(version.profileSnapshot?.contentPromise)}
+                          </p>
+                          <p>
+                            <span className="text-gray-500 dark:text-gray-300">禁区：</span>
+                            {displayList(version.profileSnapshot?.forbiddenTopics)}
+                          </p>
+                          <p>
+                            <span className="text-gray-500 dark:text-gray-300">CTA 风格：</span>
+                            {displayText(version.profileSnapshot?.ctaStyle)}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {versions.length === 0 && <p className="text-xs text-gray-500">暂无历史版本</p>}

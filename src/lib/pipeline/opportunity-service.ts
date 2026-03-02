@@ -3,6 +3,7 @@ import { OpportunityStatus, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import type {
   OpportunityScoreResult,
+  OpportunityWindowConfig,
   SyncOpportunitiesResult,
   TopicClusterInput,
   TopicEvidence,
@@ -11,6 +12,12 @@ import type {
 const DEFAULT_WINDOW_HOURS = 2;
 const DEFAULT_MIN_SCORE = 45;
 const MAX_EVIDENCE_COUNT = 12;
+
+export const DEFAULT_OPPORTUNITY_WINDOWS: OpportunityWindowConfig[] = [
+  { label: '24h', hours: 24, weight: 0.65 },
+  { label: '3d', hours: 72, weight: 0.25 },
+  { label: '7d', hours: 168, weight: 0.1 },
+];
 
 const HIGH_RISK_TERMS = [
   '博彩',
@@ -23,6 +30,7 @@ const HIGH_RISK_TERMS = [
   '恐怖',
   '毒品',
   '诈骗',
+  '仇恨',
 ];
 
 function clamp(value: number, min: number, max: number) {
@@ -121,7 +129,12 @@ function scoreClusterMomentum(
   const lateHot = late.reduce((sum, item) => sum + (item.hotValue ?? 0), 0) / late.length;
   const hotDeltaScore =
     earlyHot > 0 || lateHot > 0
-      ? clamp((lateHot - earlyHot + Math.max(earlyHot, lateHot)) / (Math.max(earlyHot, lateHot) * 2 + 1), 0, 1)
+      ? clamp(
+          (lateHot - earlyHot + Math.max(earlyHot, lateHot)) /
+            (Math.max(earlyHot, lateHot) * 2 + 1),
+          0,
+          1
+        )
       : 0.5;
 
   return clamp((rankDeltaScore * 0.7 + hotDeltaScore * 0.3) * 100, 0, 100);
@@ -190,8 +203,8 @@ function categoryMatch(clusterKeywords: string[], accountKeywords: string[]) {
   }
 
   const matched = clusterKeywords.filter((keyword) =>
-    accountKeywords.some((categoryKeyword) =>
-      keyword.includes(categoryKeyword) || categoryKeyword.includes(keyword)
+    accountKeywords.some(
+      (categoryKeyword) => keyword.includes(categoryKeyword) || categoryKeyword.includes(keyword)
     )
   );
 
@@ -200,6 +213,59 @@ function categoryMatch(clusterKeywords: string[], accountKeywords: string[]) {
     score: matched.length > 0 ? clamp(matched.length * 6, 0, 20) : 0,
     shouldSkip: matched.length === 0,
   };
+}
+
+function scorePersonaFit(params: {
+  title: string;
+  clusterKeywords: string[];
+  audience?: string;
+  growthGoal?: string;
+  tone?: string;
+  painPoints?: Prisma.JsonValue | null;
+}) {
+  const normalizedTitle = normalizeText(params.title);
+  const normalizedKeywords = params.clusterKeywords.map((item) => normalizeText(item));
+
+  const rawTokens = [
+    params.audience || '',
+    params.growthGoal || '',
+    params.tone || '',
+    ...(toKeywordArray(params.painPoints) || []),
+  ]
+    .join(' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+
+  if (rawTokens.length === 0) {
+    return 55;
+  }
+
+  const tokenSet = Array.from(new Set(rawTokens)).slice(0, 24);
+  const hitCount = tokenSet.reduce((count, token) => {
+    const normalizedToken = normalizeText(token);
+    if (!normalizedToken) {
+      return count;
+    }
+
+    if (normalizedTitle.includes(normalizedToken)) {
+      return count + 1;
+    }
+
+    const keywordHit = normalizedKeywords.some(
+      (keyword) => keyword.includes(normalizedToken) || normalizedToken.includes(keyword)
+    );
+    return keywordHit ? count + 1 : count;
+  }, 0);
+
+  return clamp(Math.round(35 + hitCount * 8), 20, 100);
+}
+
+function scoreRiskPrecheck(title: string, keywords: string[]) {
+  const text = `${title} ${keywords.join(' ')}`.toLowerCase();
+  const hits = HIGH_RISK_TERMS.reduce((count, term) => (text.includes(term) ? count + 1 : count), 0);
+
+  return clamp(100 - hits * 20, 0, 100);
 }
 
 function toEvidence(
@@ -337,12 +403,182 @@ async function collectClusters(windowStart: Date, windowEnd: Date) {
   };
 }
 
-export async function syncOpportunities(windowHours = DEFAULT_WINDOW_HOURS): Promise<SyncOpportunitiesResult> {
-  const now = new Date();
-  const windowEnd = now;
-  const windowStart = new Date(now.getTime() - windowHours * 60 * 60 * 1000);
+function normalizeWindows(
+  windowsInput?: OpportunityWindowConfig[]
+): OpportunityWindowConfig[] {
+  const fallback = DEFAULT_OPPORTUNITY_WINDOWS;
+  if (!windowsInput || windowsInput.length === 0) {
+    return fallback;
+  }
 
-  const [accounts, clusterResult] = await Promise.all([
+  const sanitized = windowsInput
+    .filter(
+      (window) =>
+        !!window &&
+        typeof window.label === 'string' &&
+        Number.isFinite(window.hours) &&
+        Number.isFinite(window.weight)
+    )
+    .map((window) => ({
+      label: window.label.trim() || `${Math.round(window.hours)}h`,
+      hours: Math.min(24 * 7, Math.max(1, Math.round(window.hours))),
+      weight: clamp(window.weight, 0, 1),
+    }))
+    .slice(0, 7);
+
+  if (sanitized.length === 0) {
+    return fallback;
+  }
+
+  const weightSum = sanitized.reduce((sum, window) => sum + window.weight, 0);
+  if (weightSum <= 0) {
+    return fallback;
+  }
+
+  return sanitized.map((window) => ({
+    ...window,
+    weight: Number((window.weight / weightSum).toFixed(4)),
+  }));
+}
+
+interface LayeredCluster {
+  fingerprint: string;
+  title: string;
+  keywords: string[];
+  evidences: TopicEvidence[];
+  latestSnapshotAt: Date;
+  windows: Record<
+    string,
+    {
+      resonanceCount: number;
+      growthScore: number;
+      persistenceScore: number;
+      latestSnapshotAt: Date;
+    }
+  >;
+}
+
+function mergeWindowClusters(results: Array<{ label: string; clusters: TopicClusterInput[] }>) {
+  const merged = new Map<string, LayeredCluster>();
+
+  for (const result of results) {
+    for (const cluster of result.clusters) {
+      const current = merged.get(cluster.fingerprint);
+      const layerItem = {
+        resonanceCount: cluster.resonanceCount,
+        growthScore: cluster.growthScore,
+        persistenceScore: cluster.persistenceScore,
+        latestSnapshotAt: cluster.latestSnapshotAt,
+      };
+
+      if (!current) {
+        merged.set(cluster.fingerprint, {
+          fingerprint: cluster.fingerprint,
+          title: cluster.title,
+          keywords: cluster.keywords,
+          evidences: cluster.evidences.slice(0, MAX_EVIDENCE_COUNT),
+          latestSnapshotAt: cluster.latestSnapshotAt,
+          windows: {
+            [result.label]: layerItem,
+          },
+        });
+        continue;
+      }
+
+      const keywordSet = new Set([...current.keywords, ...cluster.keywords]);
+      const evidenceByKey = new Map<string, TopicEvidence>();
+      [...current.evidences, ...cluster.evidences].forEach((evidence) => {
+        const key = `${evidence.platform}:${evidence.title}:${evidence.url || ''}`;
+        if (!evidenceByKey.has(key)) {
+          evidenceByKey.set(key, evidence);
+        }
+      });
+
+      current.keywords = Array.from(keywordSet).slice(0, 16);
+      current.evidences = Array.from(evidenceByKey.values()).slice(0, MAX_EVIDENCE_COUNT);
+      current.latestSnapshotAt =
+        cluster.latestSnapshotAt > current.latestSnapshotAt
+          ? cluster.latestSnapshotAt
+          : current.latestSnapshotAt;
+      current.windows[result.label] = layerItem;
+    }
+  }
+
+  return merged;
+}
+
+function computeWeightedScore(params: {
+  cluster: LayeredCluster;
+  windows: OpportunityWindowConfig[];
+  categoryScore: number;
+}) {
+  let weighted = 0;
+  const layerScores: Record<string, number> = {};
+  const reasons: string[] = [];
+
+  for (const window of params.windows) {
+    const layer = params.cluster.windows[window.label];
+    if (!layer) {
+      layerScores[window.label] = 0;
+      reasons.push(`window:${window.label}:0.0`);
+      continue;
+    }
+
+    const layerScore = scoreOpportunity({
+      resonanceCount: layer.resonanceCount,
+      growthScore: layer.growthScore,
+      persistenceScore: layer.persistenceScore,
+      latestSnapshotAt: layer.latestSnapshotAt,
+      title: params.cluster.title,
+      categoryScore: params.categoryScore,
+    });
+
+    layerScores[window.label] = layerScore.score;
+    weighted += layerScore.score * window.weight;
+    reasons.push(`window:${window.label}:${layerScore.score.toFixed(1)}*${window.weight.toFixed(2)}`);
+  }
+
+  return {
+    weightedScore: Number(weighted.toFixed(2)),
+    layerScores,
+    reasons,
+  };
+}
+
+export async function syncOpportunities(
+  input?: number | { windows?: OpportunityWindowConfig[] }
+): Promise<SyncOpportunitiesResult> {
+  const now = new Date();
+  const minScore = Number(process.env.OPPORTUNITY_MIN_SCORE ?? DEFAULT_MIN_SCORE);
+
+  let windows: OpportunityWindowConfig[];
+  if (typeof input === 'number') {
+    windows = normalizeWindows([
+      {
+        label: `${Math.min(24, Math.max(1, Math.floor(input || DEFAULT_WINDOW_HOURS)))}h`,
+        hours: Math.min(24, Math.max(1, Math.floor(input || DEFAULT_WINDOW_HOURS))),
+        weight: 1,
+      },
+    ]);
+  } else {
+    windows = normalizeWindows(input?.windows);
+  }
+
+  const windowResults = await Promise.all(
+    windows.map(async (window) => {
+      const windowEnd = now;
+      const windowStart = new Date(now.getTime() - window.hours * 60 * 60 * 1000);
+      const result = await collectClusters(windowStart, windowEnd);
+      return {
+        label: window.label,
+        windowStart,
+        windowEnd,
+        ...result,
+      };
+    })
+  );
+
+  const [accounts, mergedClusters] = await Promise.all([
     prisma.account.findMany({
       where: { isActive: true },
       include: {
@@ -351,50 +587,66 @@ export async function syncOpportunities(windowHours = DEFAULT_WINDOW_HOURS): Pro
             category: true,
           },
         },
+        profile: true,
       },
     }),
-    collectClusters(windowStart, windowEnd),
+    Promise.resolve(mergeWindowClusters(windowResults.map((item) => ({ label: item.label, clusters: item.clusters })))),
   ]);
 
-  if (accounts.length === 0 || clusterResult.clusters.length === 0) {
+  if (accounts.length === 0 || mergedClusters.size === 0) {
     return {
-      clustersUpserted: clusterResult.clusters.length,
+      clustersUpserted: mergedClusters.size,
       opportunitiesUpserted: 0,
       skippedAccounts: 0,
-      sourceCount: clusterResult.sourceCount,
-      windowStart: windowStart.toISOString(),
-      windowEnd: windowEnd.toISOString(),
+      sourceCount: windowResults.reduce((sum, item) => sum + item.sourceCount, 0),
+      windowStart: new Date(now.getTime() - Math.max(...windows.map((item) => item.hours)) * 60 * 60 * 1000).toISOString(),
+      windowEnd: now.toISOString(),
+      windows,
     };
   }
 
   let clustersUpserted = 0;
   let opportunitiesUpserted = 0;
   let skippedAccounts = 0;
-  const minScore = Number(process.env.OPPORTUNITY_MIN_SCORE ?? DEFAULT_MIN_SCORE);
 
-  for (const cluster of clusterResult.clusters) {
+  for (const cluster of mergedClusters.values()) {
+    const growthScore =
+      windows.reduce((sum, window) => {
+        const layer = cluster.windows[window.label];
+        return sum + (layer ? layer.growthScore * window.weight : 0);
+      }, 0) || 0;
+
+    const resonanceCount = Object.values(cluster.windows).reduce(
+      (max, layer) => Math.max(max, layer.resonanceCount),
+      1
+    );
+
+    const earliestWindowStart = new Date(
+      now.getTime() - Math.max(...windows.map((item) => item.hours)) * 60 * 60 * 1000
+    );
+
     const topicCluster = await prisma.topicCluster.upsert({
       where: { fingerprint: cluster.fingerprint },
       update: {
         title: cluster.title,
         keywords: cluster.keywords,
         evidences: cluster.evidences as unknown as Prisma.InputJsonValue,
-        resonanceCount: cluster.resonanceCount,
-        growthScore: cluster.growthScore,
+        resonanceCount,
+        growthScore,
         latestSnapshotAt: cluster.latestSnapshotAt,
-        windowStart: cluster.windowStart,
-        windowEnd: cluster.windowEnd,
+        windowStart: earliestWindowStart,
+        windowEnd: now,
       },
       create: {
         fingerprint: cluster.fingerprint,
         title: cluster.title,
         keywords: cluster.keywords,
         evidences: cluster.evidences as unknown as Prisma.InputJsonValue,
-        resonanceCount: cluster.resonanceCount,
-        growthScore: cluster.growthScore,
+        resonanceCount,
+        growthScore,
         latestSnapshotAt: cluster.latestSnapshotAt,
-        windowStart: cluster.windowStart,
-        windowEnd: cluster.windowEnd,
+        windowStart: earliestWindowStart,
+        windowEnd: now,
       },
     });
 
@@ -409,30 +661,46 @@ export async function syncOpportunities(windowHours = DEFAULT_WINDOW_HOURS): Pro
         )
       );
 
-      const match = categoryMatch(
-        cluster.keywords.map((keyword) => keyword.toLowerCase()),
-        accountKeywords
-      );
+      const clusterKeywordsLower = cluster.keywords.map((keyword) => keyword.toLowerCase());
+      const match = categoryMatch(clusterKeywordsLower, accountKeywords);
 
       if (match.shouldSkip) {
         skippedAccounts += 1;
         continue;
       }
 
-      const scoreResult = scoreOpportunity({
-        resonanceCount: cluster.resonanceCount,
-        growthScore: cluster.growthScore,
-        persistenceScore: cluster.persistenceScore,
-        latestSnapshotAt: cluster.latestSnapshotAt,
+      const personaFitScore = scorePersonaFit({
         title: cluster.title,
+        clusterKeywords: cluster.keywords,
+        audience: account.profile?.audience,
+        growthGoal: account.profile?.growthGoal,
+        tone: account.profile?.tone,
+        painPoints: account.profile?.painPoints,
+      });
+
+      const riskPrecheckScore = scoreRiskPrecheck(cluster.title, cluster.keywords);
+      const weightedScore = computeWeightedScore({
+        cluster,
+        windows,
         categoryScore: match.score,
       });
 
-      if (scoreResult.score < minScore) {
+      // Persona fitting is applied as soft weighting after hard category filter.
+      const personaFactor = 0.7 + (personaFitScore / 100) * 0.3;
+      const riskPenalty = (100 - riskPrecheckScore) * 0.12;
+      const finalScore = clamp(weightedScore.weightedScore * personaFactor - riskPenalty, 0, 100);
+
+      if (finalScore < minScore) {
         continue;
       }
 
-      const reasons = [...scoreResult.reasons];
+      const reasons = [
+        `weighted:${weightedScore.weightedScore.toFixed(1)}`,
+        `persona-fit:${personaFitScore.toFixed(1)}`,
+        `risk-precheck:${riskPrecheckScore.toFixed(1)}`,
+        ...weightedScore.reasons,
+      ];
+
       if (match.matched.length > 0) {
         reasons.push(`matched:${match.matched.join('|')}`);
       }
@@ -453,12 +721,23 @@ export async function syncOpportunities(windowHours = DEFAULT_WINDOW_HOURS): Pro
         },
       });
 
+      const layeredScore = {
+        windows: weightedScore.layerScores,
+        weights: windows.reduce<Record<string, number>>((acc, item) => {
+          acc[item.label] = item.weight;
+          return acc;
+        }, {}),
+      };
+
       if (!existing) {
         await prisma.opportunity.create({
           data: {
             topicClusterId: topicCluster.id,
             accountId: account.id,
-            score: scoreResult.score,
+            score: finalScore,
+            layeredScore: layeredScore as unknown as Prisma.InputJsonValue,
+            personaFitScore,
+            riskPrecheckScore,
             reasons: reasons as Prisma.InputJsonValue,
             status: OpportunityStatus.NEW,
             expiresAt,
@@ -474,7 +753,10 @@ export async function syncOpportunities(windowHours = DEFAULT_WINDOW_HOURS): Pro
         await prisma.opportunity.update({
           where: { id: existing.id },
           data: {
-            score: scoreResult.score,
+            score: finalScore,
+            layeredScore: layeredScore as unknown as Prisma.InputJsonValue,
+            personaFitScore,
+            riskPrecheckScore,
             reasons: reasons as Prisma.InputJsonValue,
             status: nextStatus,
             expiresAt,
@@ -490,9 +772,10 @@ export async function syncOpportunities(windowHours = DEFAULT_WINDOW_HOURS): Pro
     clustersUpserted,
     opportunitiesUpserted,
     skippedAccounts,
-    sourceCount: clusterResult.sourceCount,
-    windowStart: windowStart.toISOString(),
-    windowEnd: windowEnd.toISOString(),
+    sourceCount: windowResults.reduce((sum, item) => sum + item.sourceCount, 0),
+    windowStart: new Date(now.getTime() - Math.max(...windows.map((item) => item.hours)) * 60 * 60 * 1000).toISOString(),
+    windowEnd: now.toISOString(),
+    windows,
   };
 }
 

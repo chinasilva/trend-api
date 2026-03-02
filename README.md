@@ -11,7 +11,9 @@
 2. 机会同步：`POST /api/pipeline/opportunities/sync`
 3. 机会查询：`GET /api/opportunities`
 4. 草稿生成：`POST /api/drafts/generate`
+4.1 自动选题并生成：`POST /api/drafts/auto-generate`
 5. 草稿详情：`GET /api/drafts/:id`
+5.1 选题追溯报告：`GET /api/drafts/:id/synthesis-report`
 6. 草稿重生：`POST /api/drafts/:id/regenerate`
 7. 配图占位规划：`POST /api/drafts/:id/assets/plan`
 8. 账号定位读取/更新/回滚：
@@ -21,6 +23,9 @@
    - `GET /api/accounts/:id/profile`
    - `PUT /api/accounts/:id/profile`
    - `POST /api/accounts/:id/profile/rollback`
+   - `GET /api/accounts/:id/automation`
+   - `PUT /api/accounts/:id/automation`
+11. 定时自动生成执行：`POST /api/pipeline/auto-generate/run`
 9. 发布任务：`POST /api/publish/wechat`
 10. 发布重试：`POST /api/publish/jobs/:id/retry`
 
@@ -100,6 +105,8 @@ npm run dev
 npm run lint
 npx tsc --noEmit
 npm test
+# 需要先设置 PIPELINE_SECRET 和 ACCOUNT_ID
+tools/pipeline-smoke.sh <account_id>
 ```
 
 ## 参考文档

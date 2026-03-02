@@ -109,6 +109,19 @@ enum PublishDeliveryStage {
   PUBLISHED
 }
 
+enum AutoGenerateJobStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELED
+}
+
+enum AutoGenerateTriggerMode {
+  MANUAL
+  SCHEDULED
+}
+
 model Account {
   id          String   @id @default(cuid())
   name        String
@@ -117,6 +130,11 @@ model Account {
   isActive    Boolean  @default(true)
   autoPublish Boolean  @default(false)
   dailyLimit  Int      @default(3)
+  autoGenerateEnabled Boolean @default(false)
+  autoGenerateTime    String?
+  autoGenerateLeadMinutes Int @default(60)
+  autoGenerateTimezone String @default("Asia/Shanghai")
+  lastAutoGenerateAt DateTime?
   metadata    Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -128,6 +146,9 @@ model Account {
   drafts        Draft[]
   publishJobs   PublishJob[]
   metrics       PerformanceMetric[]
+  synthesisReports TopicSynthesisReport[]
+  researches TopicResearch[]
+  autoGenerateJobs AutoGenerateJob[]
 }
 
 model AccountProfile {
@@ -212,6 +233,9 @@ model Opportunity {
   topicClusterId String
   accountId      String
   score          Float
+  layeredScore   Json?
+  personaFitScore Float @default(0)
+  riskPrecheckScore Float @default(0)
   reasons        Json?
   status         OpportunityStatus @default(NEW)
   expiresAt      DateTime?
@@ -232,6 +256,7 @@ model Draft {
   id              String     @id @default(cuid())
   opportunityId   String
   accountId       String
+  synthesisReportId String?
   parentDraftId   String?
   regenerationIndex Int      @default(0)
   title           String
@@ -248,13 +273,16 @@ model Draft {
 
   opportunity Opportunity  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  synthesisReport TopicSynthesisReport? @relation(fields: [synthesisReportId], references: [id], onDelete: SetNull)
   parentDraft Draft?       @relation("DraftRegeneration", fields: [parentDraftId], references: [id], onDelete: SetNull)
   regenerations Draft[]    @relation("DraftRegeneration")
   publishJobs PublishJob[]
   metrics     PerformanceMetric[]
+  autoGenerateJobs AutoGenerateJob[]
 
   @@index([accountId, status, createdAt])
   @@index([parentDraftId, createdAt])
+  @@index([synthesisReportId])
 }
 
 model PublishJob {
@@ -304,4 +332,68 @@ model PerformanceMetric {
   publishJob  PublishJob?  @relation(fields: [publishJobId], references: [id], onDelete: SetNull)
 
   @@index([accountId, collectedAt])
+}
+
+model TopicSynthesisReport {
+  id                String   @id @default(cuid())
+  accountId         String
+  finalTopic        String
+  oneLiner          String?
+  sourceItems       Json?
+  mergeRationale    Json?
+  selectionRationale Json?
+  accountFitReason  String?
+  traceScores       Json?
+  riskDowngradeTrace Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  researches TopicResearch[]
+  drafts Draft[]
+  jobs AutoGenerateJob[]
+
+  @@index([accountId, createdAt])
+}
+
+model TopicResearch {
+  id                String   @id @default(cuid())
+  accountId         String
+  synthesisReportId String
+  querySet          Json?
+  sources           Json?
+  languageMix       String   @default("mixed")
+  retryCount        Int      @default(0)
+  fallbackUsed      Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  synthesisReport TopicSynthesisReport @relation(fields: [synthesisReportId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([synthesisReportId])
+}
+
+model AutoGenerateJob {
+  id                String   @id @default(cuid())
+  accountId         String
+  synthesisReportId String?
+  draftId           String?
+  status            AutoGenerateJobStatus @default(QUEUED)
+  triggerMode       AutoGenerateTriggerMode
+  runKey            String   @unique
+  scheduledFor      DateTime?
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  error             String?
+  fallbackUsed      Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  synthesisReport TopicSynthesisReport? @relation(fields: [synthesisReportId], references: [id], onDelete: SetNull)
+  draft Draft? @relation(fields: [draftId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, status, createdAt])
 }
