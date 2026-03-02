@@ -1,0 +1,41 @@
+name: CI Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      TREND_API_POSTGRES_URL: ${{ secrets.TREND_API_POSTGRES_URL_NON_POOLING }}
+      POSTGRES_URL: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GATE_DB_BASE_REF: origin/${{ github.base_ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Database gate
+        run: npm run gate:db

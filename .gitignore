@@ -49,3 +49,8 @@ next-env.d.ts
 # local UI check artifacts
 /docs/ui-checks/
 /docs/spec-template.md
+
+# local workflow docs/assets (not part of repository deliverables)
+/docs/SESSION-BOOTSTRAP.md
+/docs/weekly-workflow-review.md
+/docs/wechat-account-matrix/
