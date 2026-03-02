@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { PLATFORM_CONFIGS, type Platform, type TrendItem } from '@/types/trend';
 
 const SNAPSHOT_TOLERANCE_MS = 60 * 1000; // 1 minute
+const SNAPSHOT_DEDUP_WINDOW_DEFAULT_MINUTES = 120;
 
 export interface TimelineItem {
   snapshotAt: string;
@@ -19,6 +20,16 @@ export interface TimelinePagination {
   totalPages: number;
   hasPrev: boolean;
   hasNext: boolean;
+}
+
+function resolveSnapshotDedupWindowMinutes() {
+  const raw = Number(
+    process.env.SNAPSHOT_DEDUP_WINDOW_MINUTES ?? SNAPSHOT_DEDUP_WINDOW_DEFAULT_MINUTES
+  );
+  if (!Number.isFinite(raw)) {
+    return SNAPSHOT_DEDUP_WINDOW_DEFAULT_MINUTES;
+  }
+  return Math.max(0, Math.min(24 * 60, Math.floor(raw)));
 }
 
 const globalForPrisma = globalThis as unknown as {
@@ -243,6 +254,36 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[], snap
 
   const snapshotCreateTasks: Array<Promise<unknown>> = [];
   let contentFailCount = 0;
+  let skippedCount = 0;
+
+  const dedupWindowMinutes = resolveSnapshotDedupWindowMinutes();
+  const dedupWindowMs = dedupWindowMinutes * 60 * 1000;
+  const contentIds: string[] = [];
+  contentResults.forEach((result) => {
+    if (result.status === 'fulfilled') {
+      contentIds.push(result.value.id);
+    }
+  });
+
+  const latestSnapshots =
+    contentIds.length === 0
+      ? []
+      : await prisma.snapshot.findMany({
+          where: {
+            contentId: {
+              in: contentIds,
+            },
+          },
+          orderBy: [{ contentId: 'asc' }, { createdAt: 'desc' }],
+          distinct: ['contentId'],
+          select: {
+            contentId: true,
+            rank: true,
+            hotValue: true,
+            createdAt: true,
+          },
+        });
+  const latestSnapshotMap = new Map(latestSnapshots.map((item) => [item.contentId, item]));
 
   contentResults.forEach((result, index) => {
     if (result.status !== 'fulfilled') {
@@ -251,6 +292,17 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[], snap
     }
 
     const trend = trends[index];
+    const latest = latestSnapshotMap.get(result.value.id);
+    if (latest && dedupWindowMs > 0) {
+      const unchanged =
+        latest.rank === trend.rank && (latest.hotValue ?? null) === (trend.hotValue || null);
+      const withinWindow = snapshotCreatedAt.getTime() - latest.createdAt.getTime() <= dedupWindowMs;
+      if (unchanged && withinWindow) {
+        skippedCount += 1;
+        return;
+      }
+    }
+
     snapshotCreateTasks.push(
       prisma.snapshot.create({
         data: {
@@ -268,8 +320,9 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[], snap
   const snapshotFailCount = snapshotResults.length - snapshotSuccessCount;
 
   return {
-    successCount: snapshotSuccessCount,
+    successCount: snapshotSuccessCount + skippedCount,
     failCount: contentFailCount + snapshotFailCount,
+    skippedCount,
   };
 }
 

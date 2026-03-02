@@ -1,6 +1,7 @@
 import type { Platform, TrendItem } from '@/types/trend';
 import * as tianapi from './tianapi';
 import * as dailyhot from './dailyhot';
+import * as signal from './signal';
 
 const scraperMap: Record<Platform, () => Promise<TrendItem[]>> = {
   douyin: tianapi.fetchDouyin,
@@ -13,6 +14,7 @@ const scraperMap: Record<Platform, () => Promise<TrendItem[]>> = {
   bilibili: tianapi.fetchBilibili,
   xiaohongshu: dailyhot.fetchXiaohongshu,
   weixinvideo: dailyhot.fetchWeixinvideo,
+  signal: signal.fetchSignal,
 };
 
 export async function fetchTrends(platform: Platform): Promise<TrendItem[]> {
@@ -54,3 +56,4 @@ export {
   fetchBilibili,
 } from './tianapi';
 export { fetchXiaohongshu, fetchWeixinvideo } from './dailyhot';
+export { fetchSignal } from './signal';
