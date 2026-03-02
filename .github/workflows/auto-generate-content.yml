@@ -29,34 +29,42 @@ jobs:
           HTTP_CODE=$(curl -sS -o response.json -w "%{http_code}" -X POST "${API_URL}/api/pipeline/auto-generate/run" \
             -H "x-pipeline-secret: ${PIPELINE_SYNC_SECRET}")
 
-          cat response.json | jq .
+          ERROR_CODE=$(jq -r '.errorCode // ""' response.json)
+          ERROR_MESSAGE=$(jq -r '.message // .error // ""' response.json)
 
-          RESPONSE_DELIMITER="RESPONSE_$(date +%s%N)"
-          {
-            echo "response<<${RESPONSE_DELIMITER}"
-            cat response.json
-            echo
-            echo "${RESPONSE_DELIMITER}"
-          } >> "$GITHUB_OUTPUT"
-
+          OUTPUT_FILE="response.json"
           if [ "${HTTP_CODE}" -ge 400 ]; then
-            ERROR_CODE=$(jq -r '.errorCode // ""' response.json)
-            ERROR_MESSAGE=$(jq -r '.message // .error // ""' response.json)
             if [ "${ERROR_CODE}" = "AUTO_GENERATE_RUN_FAILED" ] && \
               echo "${ERROR_MESSAGE}" | grep -qiE 'prisma\.account\.findMany|does not exist in the current database|P2022'; then
               echo "::warning::Auto-generate skipped because Account automation columns are missing in runtime database. Run DB migration and re-enable strict gate."
               echo "compatibility_skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
+              OUTPUT_FILE="response-compatibility-skip.json"
+              cat > "${OUTPUT_FILE}" <<'JSON'
+          {"success":true,"compatibilitySkip":true,"message":"Skipped auto-generate because runtime database schema is missing Account auto-generate columns. Run DB migration to enable full execution."}
+          JSON
+            else
+              cat response.json | jq .
+              echo "Auto generate endpoint returned HTTP ${HTTP_CODE}"
+              exit 1
             fi
-            echo "Auto generate endpoint returned HTTP ${HTTP_CODE}"
-            exit 1
           fi
 
           SUCCESS=$(jq -r '.success // false' response.json)
-          if [ "${SUCCESS}" != "true" ]; then
+          if [ "${SUCCESS}" != "true" ] && [ "${OUTPUT_FILE}" = "response.json" ]; then
+            cat response.json | jq .
             echo "Auto generate endpoint returned success=false"
             exit 1
           fi
+
+          cat "${OUTPUT_FILE}" | jq .
+
+          RESPONSE_DELIMITER="RESPONSE_$(date +%s%N)"
+          {
+            echo "response<<${RESPONSE_DELIMITER}"
+            cat "${OUTPUT_FILE}"
+            echo
+            echo "${RESPONSE_DELIMITER}"
+          } >> "$GITHUB_OUTPUT"
 
         id: trigger
 
