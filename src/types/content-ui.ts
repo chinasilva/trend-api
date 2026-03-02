@@ -141,6 +141,7 @@ export interface PublishJobItem {
 
 export interface DraftDetail {
   id: string;
+  synthesisReportId?: string | null;
   title: string;
   content: string;
   outline: string[];
@@ -183,6 +184,11 @@ export interface SyncOpportunitiesData {
   sourceCount: number;
   windowStart: string;
   windowEnd: string;
+  windows?: Array<{
+    label: string;
+    hours: number;
+    weight: number;
+  }>;
 }
 
 export interface PublishJobResult {
@@ -194,6 +200,51 @@ export interface PublishJobResult {
   errorMessage?: string | null;
 }
 
+export interface TopicSynthesisSourceItem {
+  platform: string;
+  title: string;
+  url?: string;
+  reason: string;
+  score?: number;
+}
+
+export interface TopicSynthesisReportItem {
+  id: string;
+  accountId: string;
+  finalTopic: string;
+  oneLiner?: string;
+  sourceItems: TopicSynthesisSourceItem[];
+  mergeRationale: string[];
+  selectionRationale: string[];
+  accountFitReason?: string;
+  traceScores: Record<string, number>;
+  riskDowngradeTrace: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TopicResearchItem {
+  id: string;
+  accountId: string;
+  synthesisReportId: string;
+  querySet: string[];
+  sources: Array<{
+    title: string;
+    url?: string;
+    snippet: string;
+    language: 'zh' | 'en' | 'other';
+  }>;
+  languageMix: string;
+  retryCount: number;
+  fallbackUsed: boolean;
+  createdAt: string;
+}
+
+export interface DraftSynthesisReportData {
+  report: TopicSynthesisReportItem;
+  researches: TopicResearchItem[];
+}
+
 export interface AccountListItem {
   id: string;
   name: string;
@@ -202,6 +253,11 @@ export interface AccountListItem {
   isActive: boolean;
   autoPublish: boolean;
   dailyLimit: number;
+  autoGenerateEnabled?: boolean;
+  autoGenerateTime?: string | null;
+  autoGenerateLeadMinutes?: number;
+  autoGenerateTimezone?: string;
+  lastAutoGenerateAt?: string | null;
 }
 
 export interface AccountMutationInput {
@@ -211,6 +267,10 @@ export interface AccountMutationInput {
   isActive?: boolean;
   autoPublish?: boolean;
   dailyLimit?: number;
+  autoGenerateEnabled?: boolean;
+  autoGenerateTime?: string | null;
+  autoGenerateLeadMinutes?: number;
+  autoGenerateTimezone?: string;
 }
 
 export const OPPORTUNITY_STATUS_OPTIONS: OpportunityStatus[] = [

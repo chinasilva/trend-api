@@ -1,0 +1,23 @@
+name: Auto Generate Content
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-auto-generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger scheduled auto-generate run
+        run: |
+          RESPONSE=$(curl -s -X POST "${{ secrets.API_URL }}/api/pipeline/auto-generate/run" \
+            -H "x-pipeline-secret: ${{ secrets.PIPELINE_SYNC_SECRET }}")
+          echo "response=$RESPONSE" >> "$GITHUB_OUTPUT"
+        id: trigger
+
+      - name: Print summary
+        env:
+          RESPONSE: ${{ steps.trigger.outputs.response }}
+        run: |
+          echo "$RESPONSE" | jq .

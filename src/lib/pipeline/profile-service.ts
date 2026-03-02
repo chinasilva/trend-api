@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import type {
+  AccountAutomationConfig,
   AccountProfileData,
   AccountProfileInput,
   AccountProfileVersionItem,
@@ -34,6 +35,11 @@ export interface AccountListItem {
   isActive: boolean;
   autoPublish: boolean;
   dailyLimit: number;
+  autoGenerateEnabled: boolean;
+  autoGenerateTime: string | null;
+  autoGenerateLeadMinutes: number;
+  autoGenerateTimezone: string;
+  lastAutoGenerateAt: string | null;
 }
 
 export interface AccountMutationInput {
@@ -43,6 +49,17 @@ export interface AccountMutationInput {
   isActive?: boolean;
   autoPublish?: boolean;
   dailyLimit?: number;
+  autoGenerateEnabled?: boolean;
+  autoGenerateTime?: string | null;
+  autoGenerateLeadMinutes?: number;
+  autoGenerateTimezone?: string;
+}
+
+export interface AccountAutomationInput {
+  enabled?: boolean;
+  publishTime?: string | null;
+  leadMinutes?: number;
+  timezone?: string;
 }
 
 function normalizeStringArray(value: unknown, max = 10) {
@@ -140,6 +157,49 @@ function normalizeAccountFlag(value: unknown, fallback: boolean) {
   }
 
   return value;
+}
+
+function normalizeAccountTime(value: unknown, fallback: string | null) {
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const matched = normalized.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!matched) {
+    throw new Error('Validation failed: autoGenerateTime must be HH:mm.');
+  }
+
+  return `${matched[1]}:${matched[2]}`;
+}
+
+function normalizeTimezone(value: unknown, fallback: string) {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return fallback;
+  }
+
+  return normalized.slice(0, 80);
+}
+
+function normalizeLeadMinutes(value: unknown, fallback: number) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return fallback;
+  }
+
+  return Math.min(360, Math.max(5, Math.round(value)));
 }
 
 function toInput(profile: {
@@ -433,10 +493,18 @@ export async function listAccounts(options?: { includeInactive?: boolean }): Pro
       isActive: true,
       autoPublish: true,
       dailyLimit: true,
+      autoGenerateEnabled: true,
+      autoGenerateTime: true,
+      autoGenerateLeadMinutes: true,
+      autoGenerateTimezone: true,
+      lastAutoGenerateAt: true,
     },
   });
 
-  return accounts;
+  return accounts.map((account) => ({
+    ...account,
+    lastAutoGenerateAt: account.lastAutoGenerateAt?.toISOString() ?? null,
+  }));
 }
 
 export async function createAccount(input: AccountMutationInput): Promise<AccountListItem> {
@@ -450,6 +518,10 @@ export async function createAccount(input: AccountMutationInput): Promise<Accoun
       isActive: normalizeAccountFlag(input.isActive, true),
       autoPublish: normalizeAccountFlag(input.autoPublish, false),
       dailyLimit: normalizeAccountDailyLimit(input.dailyLimit, 3),
+      autoGenerateEnabled: normalizeAccountFlag(input.autoGenerateEnabled, false),
+      autoGenerateTime: normalizeAccountTime(input.autoGenerateTime, null),
+      autoGenerateLeadMinutes: normalizeLeadMinutes(input.autoGenerateLeadMinutes, 60),
+      autoGenerateTimezone: normalizeTimezone(input.autoGenerateTimezone, 'Asia/Shanghai'),
     },
     select: {
       id: true,
@@ -459,10 +531,18 @@ export async function createAccount(input: AccountMutationInput): Promise<Accoun
       isActive: true,
       autoPublish: true,
       dailyLimit: true,
+      autoGenerateEnabled: true,
+      autoGenerateTime: true,
+      autoGenerateLeadMinutes: true,
+      autoGenerateTimezone: true,
+      lastAutoGenerateAt: true,
     },
   });
 
-  return account;
+  return {
+    ...account,
+    lastAutoGenerateAt: account.lastAutoGenerateAt?.toISOString() ?? null,
+  };
 }
 
 export async function updateAccount(
@@ -479,6 +559,11 @@ export async function updateAccount(
       isActive: true,
       autoPublish: true,
       dailyLimit: true,
+      autoGenerateEnabled: true,
+      autoGenerateTime: true,
+      autoGenerateLeadMinutes: true,
+      autoGenerateTimezone: true,
+      lastAutoGenerateAt: true,
     },
   });
 
@@ -511,6 +596,22 @@ export async function updateAccount(
         input.dailyLimit === undefined
           ? undefined
           : normalizeAccountDailyLimit(input.dailyLimit, existing.dailyLimit),
+      autoGenerateEnabled:
+        input.autoGenerateEnabled === undefined
+          ? undefined
+          : normalizeAccountFlag(input.autoGenerateEnabled, existing.autoGenerateEnabled),
+      autoGenerateTime:
+        input.autoGenerateTime === undefined
+          ? undefined
+          : normalizeAccountTime(input.autoGenerateTime, existing.autoGenerateTime),
+      autoGenerateLeadMinutes:
+        input.autoGenerateLeadMinutes === undefined
+          ? undefined
+          : normalizeLeadMinutes(input.autoGenerateLeadMinutes, existing.autoGenerateLeadMinutes),
+      autoGenerateTimezone:
+        input.autoGenerateTimezone === undefined
+          ? undefined
+          : normalizeTimezone(input.autoGenerateTimezone, existing.autoGenerateTimezone),
     },
     select: {
       id: true,
@@ -520,10 +621,102 @@ export async function updateAccount(
       isActive: true,
       autoPublish: true,
       dailyLimit: true,
+      autoGenerateEnabled: true,
+      autoGenerateTime: true,
+      autoGenerateLeadMinutes: true,
+      autoGenerateTimezone: true,
+      lastAutoGenerateAt: true,
     },
   });
 
-  return account;
+  return {
+    ...account,
+    lastAutoGenerateAt: account.lastAutoGenerateAt?.toISOString() ?? null,
+  };
+}
+
+export async function getAccountAutomation(accountId: string): Promise<AccountAutomationConfig> {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: {
+      id: true,
+      autoGenerateEnabled: true,
+      autoGenerateTime: true,
+      autoGenerateLeadMinutes: true,
+      autoGenerateTimezone: true,
+      lastAutoGenerateAt: true,
+    },
+  });
+
+  if (!account) {
+    throw new Error(`Account not found: ${accountId}`);
+  }
+
+  return {
+    enabled: account.autoGenerateEnabled,
+    publishTime: account.autoGenerateTime,
+    leadMinutes: account.autoGenerateLeadMinutes,
+    timezone: account.autoGenerateTimezone,
+    lastAutoGenerateAt: account.lastAutoGenerateAt?.toISOString() ?? null,
+  };
+}
+
+export async function updateAccountAutomation(
+  accountId: string,
+  input: AccountAutomationInput
+): Promise<AccountAutomationConfig> {
+  const existing = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: {
+      id: true,
+      autoGenerateEnabled: true,
+      autoGenerateTime: true,
+      autoGenerateLeadMinutes: true,
+      autoGenerateTimezone: true,
+      lastAutoGenerateAt: true,
+    },
+  });
+
+  if (!existing) {
+    throw new Error(`Account not found: ${accountId}`);
+  }
+
+  const updated = await prisma.account.update({
+    where: { id: accountId },
+    data: {
+      autoGenerateEnabled:
+        input.enabled === undefined
+          ? undefined
+          : normalizeAccountFlag(input.enabled, existing.autoGenerateEnabled),
+      autoGenerateTime:
+        input.publishTime === undefined
+          ? undefined
+          : normalizeAccountTime(input.publishTime, existing.autoGenerateTime),
+      autoGenerateLeadMinutes:
+        input.leadMinutes === undefined
+          ? undefined
+          : normalizeLeadMinutes(input.leadMinutes, existing.autoGenerateLeadMinutes),
+      autoGenerateTimezone:
+        input.timezone === undefined
+          ? undefined
+          : normalizeTimezone(input.timezone, existing.autoGenerateTimezone),
+    },
+    select: {
+      autoGenerateEnabled: true,
+      autoGenerateTime: true,
+      autoGenerateLeadMinutes: true,
+      autoGenerateTimezone: true,
+      lastAutoGenerateAt: true,
+    },
+  });
+
+  return {
+    enabled: updated.autoGenerateEnabled,
+    publishTime: updated.autoGenerateTime,
+    leadMinutes: updated.autoGenerateLeadMinutes,
+    timezone: updated.autoGenerateTimezone,
+    lastAutoGenerateAt: updated.lastAutoGenerateAt?.toISOString() ?? null,
+  };
 }
 
 export async function updateAccountProfile(

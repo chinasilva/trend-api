@@ -77,6 +77,7 @@ export async function GET(request: Request, { params }: RouteParams) {
       success: true,
       data: {
         id: draft.id,
+        synthesisReportId: draft.synthesisReportId,
         title: draft.title,
         content: draft.content,
         outline: toStringArray(draft.outline as Prisma.JsonValue | null | undefined),
