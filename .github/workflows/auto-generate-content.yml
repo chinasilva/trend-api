@@ -31,10 +31,12 @@ jobs:
 
           cat response.json | jq .
 
+          RESPONSE_DELIMITER="RESPONSE_$(date +%s%N)"
           {
-            echo 'response<<EOF'
+            echo "response<<${RESPONSE_DELIMITER}"
             cat response.json
-            echo 'EOF'
+            echo
+            echo "${RESPONSE_DELIMITER}"
           } >> "$GITHUB_OUTPUT"
 
           if [ "${HTTP_CODE}" -ge 400 ]; then
