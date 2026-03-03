@@ -18,7 +18,7 @@ const DEFAULT_PROFILE: AccountProfileInput = {
   contentPromise: '3分钟看懂热点的来龙去脉，并获得可执行建议',
   forbiddenTopics: ['违法违规', '仇恨言论', '明显未经证实的谣言'],
   ctaStyle: '评论区提问+下篇预告',
-  preferredLength: 1800,
+  preferredLength: 1200,
 };
 
 interface PrismaErrorLike {

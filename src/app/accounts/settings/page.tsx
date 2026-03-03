@@ -47,6 +47,22 @@ interface ProfileFormState {
   preferredLength: number;
 }
 
+type AccountToggleField = 'isActive' | 'autoPublish' | 'autoGenerateEnabled';
+type ProfileField = 'audience' | 'tone' | 'growthGoal' | 'preferredLength';
+
+const ACCOUNT_TOGGLE_OPTIONS: Array<{ label: string; field: AccountToggleField }> = [
+  { label: 'Active Status', field: 'isActive' },
+  { label: 'Auto Publish', field: 'autoPublish' },
+  { label: 'AI Generation', field: 'autoGenerateEnabled' },
+];
+
+const PROFILE_FIELDS: Array<{ label: string; field: ProfileField; placeholder?: string; type?: 'text' | 'number' }> = [
+  { label: 'Target Persona', field: 'audience', placeholder: 'e.g. Corporate Executives' },
+  { label: 'Editorial Tone', field: 'tone', placeholder: 'e.g. Authoritative, Sharp' },
+  { label: 'Growth Objective', field: 'growthGoal', placeholder: 'e.g. Brand Influence' },
+  { label: 'Preferred Length', field: 'preferredLength', type: 'number' },
+];
+
 const EMPTY_ACCOUNT_FORM: AccountFormState = {
   name: '',
   platform: 'weixin',
@@ -72,14 +88,7 @@ const EMPTY_PROFILE_FORM: ProfileFormState = {
 };
 
 function splitList(input: string) {
-  return Array.from(
-    new Set(
-      input
-        .split(/[；;，,\n]/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-    )
-  );
+  return Array.from(new Set(input.split(/[；;，,\n]/).map((item) => item.trim()).filter(Boolean)));
 }
 
 function mapAccountForm(account: AccountListItem): AccountFormState {
@@ -140,35 +149,19 @@ function toProfilePayload(form: ProfileFormState): AccountProfileInput {
 
 function formatTime(value: string) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-
+  if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleString('zh-CN', {
-    hour12: false,
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
   });
 }
 
 function displayText(value: string | undefined) {
-  if (typeof value !== 'string') {
-    return '-';
-  }
-
-  const normalized = value.trim();
-  return normalized || '-';
+  return (value || '').trim() || '-';
 }
 
 function displayList(value: string[] | undefined) {
-  if (!Array.isArray(value) || value.length === 0) {
-    return '-';
-  }
-
-  const normalized = value.map((item) => item.trim()).filter(Boolean);
-  return normalized.length > 0 ? normalized.join('；') : '-';
+  if (!Array.isArray(value) || value.length === 0) return '-';
+  return value.join('；') || '-';
 }
 
 export default function AccountSettingsPage() {
@@ -183,7 +176,6 @@ export default function AccountSettingsPage() {
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [creatingAccount, setCreatingAccount] = useState(false);
-  const [manualCreateMode, setManualCreateMode] = useState(false);
   const [accountForm, setAccountForm] = useState<AccountFormState>(EMPTY_ACCOUNT_FORM);
 
   const [profileForm, setProfileForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM);
@@ -209,7 +201,6 @@ export default function AccountSettingsPage() {
         setApiSecret('');
       }
     } catch (error) {
-      setAuthMessage(error instanceof Error ? error.message : '登录状态校验失败');
       setAuthUser(null);
       setApiSecret('');
     } finally {
@@ -217,29 +208,19 @@ export default function AccountSettingsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadSession();
-  }, [loadSession]);
+  useEffect(() => { void loadSession(); }, [loadSession]);
 
   async function handleLogin() {
     const username = loginUsername.trim();
-    if (!username || !loginPassword) {
-      setAuthMessage('请输入账号和密码');
-      return;
-    }
-
+    if (!username || !loginPassword) return;
     setAuthSubmitting(true);
     setAuthMessage('');
     try {
       const session = await loginPipeline(username, loginPassword);
       setAuthUser(session.username || username);
       setApiSecret(SESSION_AUTH_PLACEHOLDER);
-      setLoginPassword('');
-      setMessage('');
     } catch (error) {
-      setAuthMessage(error instanceof Error ? error.message : '登录失败');
-      setAuthUser(null);
-      setApiSecret('');
+      setAuthMessage('Login failed');
     } finally {
       setAuthSubmitting(false);
     }
@@ -247,189 +228,121 @@ export default function AccountSettingsPage() {
 
   async function handleLogout() {
     setAuthSubmitting(true);
-    setAuthMessage('');
     try {
       await logoutPipeline();
       setAuthUser(null);
       setApiSecret('');
       setAccounts([]);
-      setSelectedAccountId('');
-      setVersions([]);
-      setMessage('');
     } catch (error) {
-      setAuthMessage(error instanceof Error ? error.message : '退出登录失败');
+      setAuthMessage('Logout failed');
     } finally {
       setAuthSubmitting(false);
     }
   }
 
-  const reloadAccounts = useCallback(
-    async (preferredAccountId?: string) => {
-      if (!apiSecret.trim()) {
-        return;
-      }
-
-      const items = await listAccounts(apiSecret.trim(), { includeInactive: true });
-      setAccounts(items);
-
-      if (items.length === 0) {
-        setSelectedAccountId('');
-        setCreatingAccount(true);
-        setManualCreateMode(true);
-        setAccountForm(EMPTY_ACCOUNT_FORM);
-        setProfileForm(EMPTY_PROFILE_FORM);
-        setVersions([]);
-        return;
-      }
-
-      if (manualCreateMode && !preferredAccountId) {
-        setSelectedAccountId('');
-        setCreatingAccount(true);
-        return;
-      }
-
-      const preferId = preferredAccountId || '';
-      const picked = items.find((item) => item.id === preferId) || items[0];
-      setSelectedAccountId(picked.id);
-      setCreatingAccount(false);
-      setManualCreateMode(false);
-      setAccountForm(mapAccountForm(picked));
-    },
-    [apiSecret, manualCreateMode]
-  );
+  const reloadAccounts = useCallback(async (preferredAccountId?: string) => {
+    if (!apiSecret.trim()) return;
+    const items = await listAccounts(apiSecret.trim(), { includeInactive: true });
+    setAccounts(items);
+    if (items.length === 0) {
+      setSelectedAccountId('');
+      setCreatingAccount(true);
+      setAccountForm(EMPTY_ACCOUNT_FORM);
+      return;
+    }
+    const preferId = preferredAccountId || (items.length > 0 ? items[0].id : '');
+    setSelectedAccountId(preferId);
+    setCreatingAccount(false);
+  }, [apiSecret]);
 
   useEffect(() => {
-    async function load() {
-      if (!apiSecret.trim()) {
-        return;
-      }
-
+    if (apiSecret.trim()) {
       setLoadingAccounts(true);
-      setMessage('');
-      try {
-        await reloadAccounts();
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : '加载账号失败');
-      } finally {
-        setLoadingAccounts(false);
-      }
+      reloadAccounts().finally(() => setLoadingAccounts(false));
     }
-
-    void load();
   }, [apiSecret, reloadAccounts]);
 
   useEffect(() => {
-    const picked = accounts.find((item) => item.id === selectedAccountId);
+    const picked = accounts.find(a => a.id === selectedAccountId);
     if (picked) {
       setCreatingAccount(false);
-      setManualCreateMode(false);
       setAccountForm(mapAccountForm(picked));
     }
   }, [accounts, selectedAccountId]);
 
   useEffect(() => {
-    async function loadProfile() {
-      if (!apiSecret.trim() || !selectedAccountId) {
-        return;
-      }
-
+    if (apiSecret.trim() && selectedAccountId) {
       setLoadingProfile(true);
-      try {
-        const result = await getAccountProfile(apiSecret.trim(), selectedAccountId);
-        setProfileForm(mapProfileForm(result.profile));
-        setVersions(result.versions);
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : '加载账号定位失败');
-      } finally {
-        setLoadingProfile(false);
-      }
+      getAccountProfile(apiSecret.trim(), selectedAccountId)
+        .then(res => {
+          setProfileForm(mapProfileForm(res.profile));
+          setVersions(res.versions);
+        })
+        .finally(() => setLoadingProfile(false));
     }
-
-    void loadProfile();
   }, [apiSecret, selectedAccountId]);
 
-  useEffect(() => {
-    if (!expandedVersionId) {
-      return;
-    }
-
-    const exists = versions.some((version) => version.id === expandedVersionId);
-    if (!exists) {
-      setExpandedVersionId(null);
-    }
-  }, [expandedVersionId, versions]);
-
   async function handleSaveAccount() {
-    if (!apiSecret.trim()) {
-      setMessage('请先登录');
-      return;
-    }
-
+    if (!apiSecret.trim()) return;
     const payload = toAccountPayload(accountForm);
-    if (!payload.name) {
-      setMessage('请输入账号名称');
+    if (!payload.name) return;
+    if (!creatingAccount && !selectedAccountId) {
+      setMessage('Please select an account first');
       return;
     }
-
     setSavingAccount(true);
-    setMessage('');
     try {
       if (creatingAccount) {
         const created = await createAccount(apiSecret.trim(), payload);
         await reloadAccounts(created.id);
-        setMessage('账号创建成功。');
       } else {
-        if (!selectedAccountId) {
-          setMessage('请选择账号或切换到新建模式');
-          return;
-        }
-
-        const updated = await updateAccount(apiSecret.trim(), selectedAccountId, payload);
-        await reloadAccounts(updated.id);
-        setMessage('账号更新成功。');
+        await updateAccount(apiSecret.trim(), selectedAccountId, payload);
+        await reloadAccounts(selectedAccountId);
       }
+      setMessage('Account saved successfully');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : creatingAccount ? '创建账号失败' : '更新账号失败');
+      setMessage('Save failed');
     } finally {
       setSavingAccount(false);
     }
   }
 
-  async function handleSaveProfile() {
-    if (!apiSecret.trim() || !selectedAccountId) {
-      setMessage('请先登录并选择账号');
-      return;
-    }
+  function handleAccountToggleChange(field: AccountToggleField, checked: boolean) {
+    setAccountForm((prev) => ({ ...prev, [field]: checked }));
+  }
 
+  function handleProfileFieldChange(field: ProfileField, value: string) {
+    setProfileForm((prev) => ({
+      ...prev,
+      [field]: field === 'preferredLength' ? Number(value) || 1800 : value,
+    }));
+  }
+
+  async function handleSaveProfile() {
+    if (!apiSecret.trim() || !selectedAccountId) return;
     setSavingProfile(true);
-    setMessage('');
     try {
-      const result = await updateAccountProfile(apiSecret.trim(), selectedAccountId, toProfilePayload(profileForm));
-      setProfileForm(mapProfileForm(result.profile));
-      setVersions(result.versions);
-      setMessage('账号定位保存成功，已全局生效。');
+      const res = await updateAccountProfile(apiSecret.trim(), selectedAccountId, toProfilePayload(profileForm));
+      setProfileForm(mapProfileForm(res.profile));
+      setVersions(res.versions);
+      setMessage('Profile updated');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '保存账号定位失败');
+      setMessage('Update failed');
     } finally {
       setSavingProfile(false);
     }
   }
 
   async function handleRollback(versionId: string) {
-    if (!apiSecret.trim() || !selectedAccountId) {
-      setMessage('请先登录并选择账号');
-      return;
-    }
-
+    if (!apiSecret.trim() || !selectedAccountId) return;
     setRollingVersionId(versionId);
-    setMessage('');
     try {
-      const result = await rollbackAccountProfile(apiSecret.trim(), selectedAccountId, versionId);
-      setProfileForm(mapProfileForm(result.profile));
-      setVersions(result.versions);
-      setMessage('回滚成功，已生成新当前版本。');
+      const res = await rollbackAccountProfile(apiSecret.trim(), selectedAccountId, versionId);
+      setProfileForm(mapProfileForm(res.profile));
+      setVersions(res.versions);
+      setMessage('Rolled back');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '回滚失败');
+      setMessage('Rollback failed');
     } finally {
       setRollingVersionId(null);
     }
@@ -437,406 +350,249 @@ export default function AccountSettingsPage() {
 
   if (authChecking) {
     return (
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <p className="text-sm text-gray-600 dark:text-gray-300">正在校验登录状态...</p>
-      </main>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+      </div>
     );
   }
 
   if (!authUser) {
     return (
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">账号与定位设置</h1>
-          <Link href="/" className="text-sm text-blue-600 underline">
-            返回首页
-          </Link>
-        </div>
-
-        <div className="space-y-4 rounded-3xl border border-black/[0.08] bg-white p-5 dark:border-white/[0.08] dark:bg-[#1c1c1e]">
-          <p className="text-sm text-gray-600 dark:text-gray-300">请先登录后再进行账号与定位管理。</p>
-          <div className="grid gap-3 md:grid-cols-2">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-center">
+          <h1 className="text-xl font-black mb-2">TrendPulse Control</h1>
+          <p className="text-sm text-slate-500 mb-8">Sign in to manage accounts</p>
+          <div className="space-y-4">
             <input
               value={loginUsername}
-              onChange={(event) => setLoginUsername(event.target.value)}
-              placeholder="登录账号"
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+              onChange={(e) => setLoginUsername(e.target.value)}
+              placeholder="Username"
+              className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none text-sm font-medium"
             />
             <input
               type="password"
               value={loginPassword}
-              onChange={(event) => setLoginPassword(event.target.value)}
-              placeholder="登录密码"
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void handleLogin();
-                }
-              }}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              placeholder="Password"
+              className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none text-sm font-medium"
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
             />
+            <button
+              onClick={handleLogin}
+              disabled={authSubmitting}
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-black hover:bg-indigo-700 disabled:opacity-50 transition-all"
+            >
+              {authSubmitting ? 'SIGNING IN...' : 'CONTINUE'}
+            </button>
+            {authMessage && <p className="text-xs text-red-500 font-bold">{authMessage}</p>}
           </div>
-          <button
-            type="button"
-            onClick={() => void handleLogin()}
-            disabled={authSubmitting}
-            className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
-          >
-            {authSubmitting ? '登录中...' : '登录'}
-          </button>
-          {authMessage && <p className="text-sm text-red-600 dark:text-red-300">{authMessage}</p>}
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">账号与定位设置</h1>
-        <Link href="/" className="text-sm text-blue-600 underline">
-          返回首页
-        </Link>
-      </div>
-
-      <div className="space-y-4 rounded-3xl border border-black/[0.08] bg-white p-5 dark:border-white/[0.08] dark:bg-[#1c1c1e]">
-        <div className="flex items-center justify-between rounded-2xl border border-black/[0.08] px-4 py-2.5 text-xs dark:border-white/[0.08]">
-          <span>已登录账号：{authUser}</span>
-          <button
-            type="button"
-            onClick={() => void handleLogout()}
-            disabled={authSubmitting}
-            className="rounded-full border border-black/10 px-3 py-1 dark:border-white/10"
-          >
-            {authSubmitting ? '退出中...' : '退出登录'}
-          </button>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 pb-20">
+      <header className="sticky top-0 z-50 glass-effect border-b border-slate-200 dark:border-slate-800 h-16">
+        <div className="max-w-5xl mx-auto px-6 h-full flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            </Link>
+            <h1 className="text-sm font-black uppercase tracking-widest">Account Hub</h1>
+          </div>
+          <button onClick={handleLogout} className="text-[10px] font-black text-red-500 uppercase hover:underline">Log out</button>
         </div>
+      </header>
 
-        <section className="space-y-3 rounded-2xl border border-black/[0.08] p-4 dark:border-white/[0.08]">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">账号管理</h2>
+      <main className="max-w-5xl mx-auto px-6 py-10 space-y-10">
+        <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between">
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Registry Management</h2>
             <button
-              type="button"
               onClick={() => {
                 setCreatingAccount(true);
-                setManualCreateMode(true);
                 setSelectedAccountId('');
                 setAccountForm(EMPTY_ACCOUNT_FORM);
-                setProfileForm(EMPTY_PROFILE_FORM);
-                setVersions([]);
-                setMessage('');
               }}
-              className="rounded-full border border-black/10 px-3 py-1 text-xs dark:border-white/10"
+              className="px-3 py-1 bg-indigo-600 text-white text-[9px] font-black rounded-lg uppercase"
             >
-              新建账号
+              New Account
             </button>
           </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <select
-              value={selectedAccountId}
-              onChange={(event) => {
-                setSelectedAccountId(event.target.value);
-                setCreatingAccount(false);
-                setManualCreateMode(false);
-              }}
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-            >
-              <option value="">选择账号</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} ({account.platform}) {account.isActive ? '' : '[停用]'}
-                </option>
-              ))}
-            </select>
-            <select
-              value={accountForm.platform}
-              onChange={(event) => setAccountForm((prev) => ({ ...prev, platform: event.target.value }))}
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-            >
-              <option value="weixin">weixin</option>
-            </select>
-            <input
-              value={accountForm.name}
-              onChange={(event) => setAccountForm((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder="账号名称"
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-            />
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={accountForm.dailyLimit}
-              onChange={(event) =>
-                setAccountForm((prev) => ({
-                  ...prev,
-                  dailyLimit: Number(event.target.value) || 3,
-                }))
-              }
-              placeholder="每日上限"
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-            />
-          </div>
-
-          <textarea
-            value={accountForm.description}
-            onChange={(event) => setAccountForm((prev) => ({ ...prev, description: event.target.value }))}
-            placeholder="账号描述（可选）"
-            rows={2}
-            className="w-full rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-          />
-
-          <div className="flex flex-wrap gap-4 text-sm">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={accountForm.isActive}
-                onChange={(event) => setAccountForm((prev) => ({ ...prev, isActive: event.target.checked }))}
-              />
-              账号激活
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={accountForm.autoPublish}
-                onChange={(event) =>
-                  setAccountForm((prev) => ({
-                    ...prev,
-                    autoPublish: event.target.checked,
-                  }))
-                }
-              />
-              自动发布
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={accountForm.autoGenerateEnabled}
-                onChange={(event) =>
-                  setAccountForm((prev) => ({
-                    ...prev,
-                    autoGenerateEnabled: event.target.checked,
-                  }))
-                }
-              />
-              自动生成
-            </label>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <input
-              type="time"
-              value={accountForm.autoGenerateTime}
-              onChange={(event) =>
-                setAccountForm((prev) => ({
-                  ...prev,
-                  autoGenerateTime: event.target.value,
-                }))
-              }
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-            />
-            <input
-              type="number"
-              min={5}
-              max={360}
-              value={accountForm.autoGenerateLeadMinutes}
-              onChange={(event) =>
-                setAccountForm((prev) => ({
-                  ...prev,
-                  autoGenerateLeadMinutes: Number(event.target.value) || 60,
-                }))
-              }
-              placeholder="提前分钟"
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-            />
-            <input
-              value={accountForm.autoGenerateTimezone}
-              onChange={(event) =>
-                setAccountForm((prev) => ({
-                  ...prev,
-                  autoGenerateTimezone: event.target.value,
-                }))
-              }
-              placeholder="时区（默认 Asia/Shanghai）"
-              className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={() => void handleSaveAccount()}
-            disabled={savingAccount || loadingAccounts || !apiSecret.trim()}
-            className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
-          >
-            {savingAccount ? '保存中...' : creatingAccount ? '创建账号' : '保存账号信息'}
-          </button>
-
-          {accounts.length === 0 && !creatingAccount && (
-            <p className="text-xs text-amber-700 dark:text-amber-300">当前暂无账号，请先创建账号。</p>
-          )}
-        </section>
-
-        <section className="space-y-3 rounded-2xl border border-black/[0.08] p-4 dark:border-white/[0.08]">
-          <h2 className="text-sm font-semibold">账号定位</h2>
-
-          {!selectedAccountId ? (
-            <p className="text-sm text-gray-500 dark:text-gray-300">请先创建或选择账号，再配置账号定位。</p>
-          ) : (
-            <>
-              <div className="grid gap-3 md:grid-cols-2">
+          <div className="p-6 space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase">Select Target</label>
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium appearance-none"
+                >
+                  <option value="">Choose Active Account</option>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.platform})</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase">Display Name</label>
                 <input
-                  value={profileForm.audience}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, audience: event.target.value }))}
-                  placeholder="目标读者"
-                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                  value={accountForm.name}
+                  onChange={(e) => setAccountForm(p => ({ ...p, name: e.target.value }))}
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium"
                 />
-                <input
-                  value={profileForm.tone}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, tone: event.target.value }))}
-                  placeholder="语气风格"
-                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-                />
-                <input
-                  value={profileForm.growthGoal}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, growthGoal: event.target.value }))}
-                  placeholder="增长目标"
-                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+               <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase">Daily Limit</label>
                 <input
                   type="number"
-                  min={800}
-                  max={3000}
-                  value={profileForm.preferredLength}
-                  onChange={(event) =>
-                    setProfileForm((prev) => ({
-                      ...prev,
-                      preferredLength: Number(event.target.value) || 1800,
-                    }))
-                  }
-                  placeholder="目标字数"
-                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-                />
-                <input
-                  value={profileForm.contentPromise}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, contentPromise: event.target.value }))}
-                  placeholder="内容承诺"
-                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-                />
-                <input
-                  value={profileForm.ctaStyle}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, ctaStyle: event.target.value }))}
-                  placeholder="CTA 风格"
-                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-                />
-                <input
-                  value={profileForm.painPoints}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, painPoints: event.target.value }))}
-                  placeholder="读者痛点（分号分隔）"
-                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
-                />
-                <input
-                  value={profileForm.forbiddenTopics}
-                  onChange={(event) =>
-                    setProfileForm((prev) => ({
-                      ...prev,
-                      forbiddenTopics: event.target.value,
-                    }))
-                  }
-                  placeholder="禁区（分号分隔）"
-                  className="rounded-2xl border border-black/[0.08] px-4 py-2.5 text-sm outline-none focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white"
+                  value={accountForm.dailyLimit}
+                  onChange={(e) => setAccountForm(p => ({ ...p, dailyLimit: Number(e.target.value) }))}
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium"
                 />
               </div>
-
-              <button
-                type="button"
-                onClick={() => void handleSaveProfile()}
-                disabled={savingProfile || loadingProfile}
-                className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
-              >
-                {savingProfile ? '保存中...' : '保存并全局生效'}
-              </button>
-
-              <div className="rounded-2xl border border-black/[0.08] p-3 dark:border-white/[0.08]">
-                <p className="mb-2 text-sm font-semibold">最近版本（最多10条）</p>
-                <div className="space-y-2">
-                  {versions.map((version) => (
-                    <div key={version.id} className="rounded-xl border border-black/[0.08] px-3 py-2 text-xs dark:border-white/[0.08]">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p>{formatTime(version.createdAt)}</p>
-                          <p className="truncate text-[11px] text-gray-500 dark:text-gray-300">
-                            读者：{displayText(version.profileSnapshot?.audience)} | 语气：
-                            {displayText(version.profileSnapshot?.tone)} | 目标：
-                            {displayText(version.profileSnapshot?.growthGoal)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedVersionId((current) => (current === version.id ? null : version.id))
-                            }
-                            className="rounded-full border border-black/10 px-3 py-1 dark:border-white/10"
-                          >
-                            {expandedVersionId === version.id ? '收起详情' : '查看详情'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleRollback(version.id)}
-                            disabled={rollingVersionId === version.id}
-                            className="rounded-full border border-black/10 px-3 py-1 disabled:opacity-50 dark:border-white/10"
-                          >
-                            {rollingVersionId === version.id ? '回滚中' : '回滚'}
-                          </button>
-                        </div>
-                      </div>
-
-                      {expandedVersionId === version.id && (
-                        <div className="mt-2 space-y-1 border-t border-black/[0.06] pt-2 dark:border-white/[0.08]">
-                          <p>
-                            <span className="text-gray-500 dark:text-gray-300">目标读者：</span>
-                            {displayText(version.profileSnapshot?.audience)}
-                          </p>
-                          <p>
-                            <span className="text-gray-500 dark:text-gray-300">语气风格：</span>
-                            {displayText(version.profileSnapshot?.tone)}
-                          </p>
-                          <p>
-                            <span className="text-gray-500 dark:text-gray-300">增长目标：</span>
-                            {displayText(version.profileSnapshot?.growthGoal)}
-                          </p>
-                          <p>
-                            <span className="text-gray-500 dark:text-gray-300">目标字数：</span>
-                            {version.profileSnapshot?.preferredLength ?? '-'}
-                          </p>
-                          <p>
-                            <span className="text-gray-500 dark:text-gray-300">读者痛点：</span>
-                            {displayList(version.profileSnapshot?.painPoints)}
-                          </p>
-                          <p>
-                            <span className="text-gray-500 dark:text-gray-300">内容承诺：</span>
-                            {displayText(version.profileSnapshot?.contentPromise)}
-                          </p>
-                          <p>
-                            <span className="text-gray-500 dark:text-gray-300">禁区：</span>
-                            {displayList(version.profileSnapshot?.forbiddenTopics)}
-                          </p>
-                          <p>
-                            <span className="text-gray-500 dark:text-gray-300">CTA 风格：</span>
-                            {displayText(version.profileSnapshot?.ctaStyle)}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {versions.length === 0 && <p className="text-xs text-gray-500">暂无历史版本</p>}
-                </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase">Trigger Time</label>
+                <input
+                  type="time"
+                  value={accountForm.autoGenerateTime}
+                  onChange={(e) => setAccountForm(p => ({ ...p, autoGenerateTime: e.target.value }))}
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium"
+                />
               </div>
-            </>
-          )}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase">Lead Minutes</label>
+                <input
+                  type="number"
+                  value={accountForm.autoGenerateLeadMinutes}
+                  onChange={(e) => setAccountForm(p => ({ ...p, autoGenerateLeadMinutes: Number(e.target.value) }))}
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-6 pt-2">
+              {ACCOUNT_TOGGLE_OPTIONS.map((opt) => (
+                <label key={opt.field} className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={accountForm[opt.field]}
+                    onChange={(e) => handleAccountToggleChange(opt.field, e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/20"
+                  />
+                  <span className="text-[10px] font-black text-slate-500 uppercase group-hover:text-slate-900 transition-colors">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <button
+              onClick={handleSaveAccount}
+              disabled={savingAccount || (!creatingAccount && !selectedAccountId)}
+              className="px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-black rounded-xl uppercase shadow-lg shadow-slate-900/10 dark:shadow-none"
+            >
+              {savingAccount ? 'Syncing...' : (creatingAccount ? 'Create Account' : 'Update Registry')}
+            </button>
+          </div>
         </section>
 
-        {message && <p className="text-sm text-gray-600 dark:text-gray-300">{message}</p>}
-      </div>
-    </main>
+        <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex items-center">
+             <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Content Positioning</h2>
+          </div>
+          <div className="p-6 space-y-8">
+            <div className="grid gap-6 md:grid-cols-2">
+              {PROFILE_FIELDS.map((field) => (
+                <div key={field.field} className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase">{field.label}</label>
+                  <input
+                    type={field.type || 'text'}
+                    value={String(profileForm[field.field])}
+                    onChange={(e) => handleProfileFieldChange(field.field, e.target.value)}
+                    placeholder={field.placeholder}
+                    className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase">Reader Pain Points (Separator: ;)</label>
+              <textarea
+                value={profileForm.painPoints}
+                onChange={(e) => setProfileForm(p => ({ ...p, painPoints: e.target.value }))}
+                className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium"
+                rows={2}
+              />
+            </div>
+
+            <button
+              onClick={handleSaveProfile}
+              disabled={savingProfile || !selectedAccountId}
+              className="px-6 py-2.5 bg-indigo-600 text-white text-[11px] font-black rounded-xl uppercase shadow-lg shadow-indigo-500/20"
+            >
+              {savingProfile ? 'Updating...' : 'Save Positioning'}
+            </button>
+
+            <div className="pt-10">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Version History</h4>
+              <div className="space-y-2">
+                {versions.map(v => (
+                  <div key={v.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-black text-slate-900 dark:text-white uppercase">{formatTime(v.createdAt)}</div>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase truncate max-w-[400px]">
+                          Target: {displayText(v.profileSnapshot?.audience)} · Tone: {displayText(v.profileSnapshot?.tone)}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => setExpandedVersionId(expandedVersionId === v.id ? null : v.id)}
+                          className="px-2 py-1 text-[9px] font-black text-slate-500 hover:text-slate-900 dark:hover:text-white uppercase"
+                        >
+                          {expandedVersionId === v.id ? 'Hide' : 'Inspect'}
+                        </button>
+                        <button
+                          onClick={() => handleRollback(v.id)}
+                          disabled={rollingVersionId === v.id}
+                          className="px-2 py-1 text-[9px] font-black text-indigo-600 hover:underline uppercase"
+                        >
+                          {rollingVersionId === v.id ? '...' : 'Restore'}
+                        </button>
+                      </div>
+                    </div>
+                    {expandedVersionId === v.id && (
+                      <div className="mt-4 p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 grid gap-4 md:grid-cols-2">
+                        {[
+                          { l: 'Audience', v: v.profileSnapshot?.audience },
+                          { l: 'Tone', v: v.profileSnapshot?.tone },
+                          { l: 'Goal', v: v.profileSnapshot?.growthGoal },
+                          { l: 'Points', v: v.profileSnapshot?.painPoints, list: true },
+                        ].map(it => (
+                          <div key={it.l} className="space-y-0.5">
+                            <span className="text-[8px] font-black text-slate-400 uppercase">{it.l}</span>
+                            <p className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                              {it.list ? displayList(it.v as string[]) : displayText(it.v as string)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {message && (
+          <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+             Status: {message}
+          </div>
+        )}
+      </main>
+    </div>
   );
 }

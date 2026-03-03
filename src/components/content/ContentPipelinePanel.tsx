@@ -70,32 +70,21 @@ const EMPTY_PROFILE: ProfileFormState = {
 
 function bannerClass(type: BannerState['type']) {
   if (type === 'success') {
-    return 'border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-200';
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200';
   }
   if (type === 'error') {
     return 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200';
   }
-
-  return 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200';
+  return 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200';
 }
 
 function toCsv(values: string[] | undefined) {
-  if (!values || values.length === 0) {
-    return '';
-  }
-
+  if (!values || values.length === 0) return '';
   return values.join('；');
 }
 
 function splitList(input: string) {
-  return Array.from(
-    new Set(
-      input
-        .split(/[；;，,\n]/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-    )
-  );
+  return Array.from(new Set(input.split(/[；;，,\n]/).map((item) => item.trim()).filter(Boolean)));
 }
 
 function mapProfileForm(input: AccountProfileInput): ProfileFormState {
@@ -126,16 +115,9 @@ function buildProfilePayload(form: ProfileFormState): AccountProfileInput {
 
 function formatTime(value: string) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-
+  if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleString('zh-CN', {
-    hour12: false,
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
   });
 }
 
@@ -147,6 +129,7 @@ export default function ContentPipelinePanel() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authUser, setAuthUser] = useState<string | null>(null);
   const [realtimeTopN, setRealtimeTopN] = useState(50);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus>('NEW');
   const [accountIdFilter, setAccountIdFilter] = useState('');
@@ -195,60 +178,37 @@ export default function ContentPipelinePanel() {
     } catch (error) {
       setAuthUser(null);
       setApiSecret('');
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '登录状态校验失败。',
-      });
+      setBanner({ type: 'error', text: 'Auth check failed.' });
     } finally {
       setAuthChecking(false);
     }
   }, []);
 
-  useEffect(() => {
-    void loadSession();
-  }, [loadSession]);
+  useEffect(() => { void loadSession(); }, [loadSession]);
 
   const selectedOpportunity = useMemo(
     () => opportunities.find((item) => item.id === selectedOpportunityId) || null,
     [opportunities, selectedOpportunityId]
   );
 
-  useEffect(() => {
-    setRealtimeSession(null);
-  }, [selectedAccountId]);
+  useEffect(() => { setRealtimeSession(null); }, [selectedAccountId]);
 
   const loadAccounts = useCallback(async () => {
-    if (!apiSecret.trim()) {
-      return;
-    }
-
+    if (!apiSecret.trim()) return;
     try {
       const items = await listAccounts(apiSecret.trim());
       setAccounts(items);
-
-      if (!selectedAccountId && items.length > 0) {
-        setSelectedAccountId(items[0].id);
-      }
-
+      if (!selectedAccountId && items.length > 0) setSelectedAccountId(items[0].id);
       if (items.length === 0) {
-        setBanner({
-          type: 'info',
-          text: '当前没有可用账号。请先前往账号定位设置页创建账号，再返回本页继续内容生产。',
-        });
+        setBanner({ type: 'info', text: 'No accounts available. Please set up account profile first.' });
       }
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '加载账号列表失败。',
-      });
+      setBanner({ type: 'error', text: 'Failed to load accounts.' });
     }
   }, [apiSecret, selectedAccountId]);
 
   const loadProfile = useCallback(async (accountId: string) => {
-    if (!apiSecret.trim() || !accountId) {
-      return;
-    }
-
+    if (!apiSecret.trim() || !accountId) return;
     setLoadingProfile(true);
     try {
       const result = await getAccountProfile(apiSecret.trim(), accountId);
@@ -256,38 +216,23 @@ export default function ContentPipelinePanel() {
       setProfileUpdatedAt(result.profile.updatedAt);
       setProfileVersions(result.versions);
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '加载账号定位失败。',
-      });
+      setBanner({ type: 'error', text: 'Failed to load profile.' });
     } finally {
       setLoadingProfile(false);
     }
   }, [apiSecret]);
 
   useEffect(() => {
-    if (!apiSecret.trim() || !selectedAccountId) {
-      return;
-    }
-
-    void loadProfile(selectedAccountId);
+    if (apiSecret.trim() && selectedAccountId) void loadProfile(selectedAccountId);
   }, [apiSecret, selectedAccountId, loadProfile]);
 
   useEffect(() => {
-    if (!apiSecret.trim()) {
-      return;
-    }
-
-    void loadAccounts();
+    if (apiSecret.trim()) void loadAccounts();
   }, [apiSecret, loadAccounts]);
 
   async function handleLogin() {
     const username = loginUsername.trim();
-    if (!username || !loginPassword) {
-      setBanner({ type: 'error', text: '请输入账号和密码。' });
-      return;
-    }
-
+    if (!username || !loginPassword) return;
     setAuthSubmitting(true);
     setBanner(null);
     try {
@@ -296,12 +241,7 @@ export default function ContentPipelinePanel() {
       setApiSecret(SESSION_AUTH_PLACEHOLDER);
       setLoginPassword('');
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '登录失败。',
-      });
-      setAuthUser(null);
-      setApiSecret('');
+      setBanner({ type: 'error', text: 'Invalid credentials.' });
     } finally {
       setAuthSubmitting(false);
     }
@@ -309,35 +249,29 @@ export default function ContentPipelinePanel() {
 
   async function handleLogout() {
     setAuthSubmitting(true);
-    setBanner(null);
     try {
       await logoutPipeline();
       setAuthUser(null);
       setApiSecret('');
       setAccounts([]);
       setOpportunities([]);
+      setPagination(null);
       setSelectedOpportunityId(null);
       setSelectedAccountId('');
       setDraft(null);
+      setSynthesisReport(null);
       setRealtimeSession(null);
+      setBanner(null);
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '退出登录失败。',
-      });
+      setBanner({ type: 'error', text: 'Logout failed.' });
     } finally {
       setAuthSubmitting(false);
     }
   }
 
   async function loadOpportunities(page = 1) {
-    if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录。' });
-      return;
-    }
-
+    if (!apiSecret.trim()) return;
     setLoadingOpportunities(true);
-    setBanner(null);
     try {
       const result = await listOpportunities(apiSecret.trim(), {
         status: statusFilter,
@@ -347,811 +281,434 @@ export default function ContentPipelinePanel() {
       });
       setOpportunities(result.items);
       setPagination(result.pagination);
-      await loadAccounts();
-
-      if (selectedOpportunityId && !result.items.some((item) => item.id === selectedOpportunityId)) {
-        setSelectedOpportunityId(null);
-      }
-
-      if (!selectedOpportunityId && result.items.length > 0) {
-        setSelectedOpportunityId(result.items[0].id);
-        setSelectedAccountId(result.items[0].accountId);
-      }
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '加载机会列表失败。',
-      });
+      setBanner({ type: 'error', text: 'Failed to load opportunities.' });
     } finally {
       setLoadingOpportunities(false);
     }
   }
 
   async function handleSync(refresh = false) {
-    const trimmedSecret = apiSecret.trim();
-    if (!trimmedSecret) {
-      setBanner({ type: 'error', text: '请先登录。' });
-      return;
-    }
-    if (!selectedAccountId) {
-      setBanner({ type: 'error', text: '请先选择账号。' });
-      return;
-    }
-
+    if (!apiSecret.trim() || !selectedAccountId) return;
     setSyncing(true);
-    setBanner(null);
     try {
-      const result = await computeRealtimeOpportunities(trimmedSecret, {
-        accountId: selectedAccountId,
-        topN: realtimeTopN,
-        refresh,
+      const result = await computeRealtimeOpportunities(apiSecret.trim(), {
+        accountId: selectedAccountId, topN: realtimeTopN, refresh,
       });
       setRealtimeSession(result);
-      setBanner({
-        type: 'success',
-        text: result.reused
-          ? `候选复用成功：session=${result.sessionId.slice(0, 8)}，有效期至 ${formatTime(result.expiresAt)}。`
-          : `候选计算完成：快照 ${result.counts.snapshotCount}，候选 ${result.counts.storedCount}。`,
-      });
+      setBanner({ type: 'success', text: `Sync complete: ${result.counts.storedCount} items.` });
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '获取候选失败。',
-      });
+      setBanner({ type: 'error', text: 'Sync failed.' });
     } finally {
       setSyncing(false);
     }
   }
 
   async function handleGenerateFromRealtimeSession() {
-    if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录。' });
-      return;
-    }
-    if (!selectedAccountId) {
-      setBanner({ type: 'error', text: '请先选择账号。' });
-      return;
-    }
-    if (!realtimeSession?.sessionId) {
-      setBanner({ type: 'error', text: '请先获取候选。' });
-      return;
-    }
-
+    if (!apiSecret.trim() || !realtimeSession?.sessionId) return;
     setGeneratingRealtime(true);
-    setBanner(null);
     try {
       const generated = await generateRealtimeDraft(apiSecret.trim(), {
-        accountId: selectedAccountId,
-        sessionId: realtimeSession.sessionId,
+        accountId: selectedAccountId, sessionId: realtimeSession.sessionId,
       });
       await loadDraft(generated.draft.draftId);
-      setRealtimeSession(null);
-      setBanner({ type: 'success', text: `草稿已生成：${generated.draft.title}` });
-      await loadOpportunities(pagination?.page || 1);
+      setBanner({ type: 'success', text: 'Draft generated from session.' });
+      void loadOpportunities(pagination?.page || 1);
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '基于候选生成草稿失败。',
-      });
+      setBanner({ type: 'error', text: 'Generation failed.' });
     } finally {
       setGeneratingRealtime(false);
     }
   }
 
   async function loadDraft(draftId: string) {
-    if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录。' });
-      return;
-    }
-
     setLoadingDraft(true);
     try {
       const data = await getDraftDetail(apiSecret.trim(), draftId);
       setDraft(data);
       if (data.synthesisReportId) {
-        setLoadingSynthesis(true);
         try {
           const report = await getDraftSynthesisReport(apiSecret.trim(), draftId);
           setSynthesisReport(report);
-        } catch {
-          setSynthesisReport(null);
-        } finally {
-          setLoadingSynthesis(false);
-        }
-      } else {
-        setSynthesisReport(null);
+        } catch { setSynthesisReport(null); }
       }
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '加载草稿详情失败。',
-      });
-      setSynthesisReport(null);
+      setBanner({ type: 'error', text: 'Failed to load draft.' });
     } finally {
       setLoadingDraft(false);
     }
   }
 
   async function handleGenerate(opportunityId: string) {
-    if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录。' });
-      return;
-    }
-
     setGeneratingOpportunityId(opportunityId);
-    setSelectedOpportunityId(opportunityId);
-    setBanner(null);
     try {
-      const picked = opportunities.find((item) => item.id === opportunityId);
-      let profilePayload = buildProfilePayload(profileForm);
-
-      if (picked) {
-        if (selectedAccountId !== picked.accountId) {
-          setSelectedAccountId(picked.accountId);
-          const profileResult = await getAccountProfile(apiSecret.trim(), picked.accountId);
-          const syncedForm = mapProfileForm(profileResult.profile);
-          setProfileForm(syncedForm);
-          setProfileUpdatedAt(profileResult.profile.updatedAt);
-          setProfileVersions(profileResult.versions);
-          profilePayload = buildProfilePayload(syncedForm);
-        }
-      }
-
       const generated = await generateDraft(apiSecret.trim(), opportunityId, {
-        profileOverride: profilePayload,
+        profileOverride: buildProfilePayload(profileForm),
       });
       await loadDraft(generated.draftId);
-      setBanner({ type: 'success', text: `草稿已生成：${generated.title}` });
-      await loadOpportunities(pagination?.page || 1);
+      void loadOpportunities(pagination?.page || 1);
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '生成草稿失败。',
-      });
+      setBanner({ type: 'error', text: 'Generation failed.' });
     } finally {
       setGeneratingOpportunityId(null);
     }
   }
 
   async function handleRegenerate() {
-    if (!draft || !apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录并生成草稿。' });
-      return;
-    }
-
+    if (!draft) return;
     setRegenerating(true);
-    setBanner(null);
     try {
       const generated = await regenerateDraft(apiSecret.trim(), draft.id);
       await loadDraft(generated.draftId);
-      setBanner({ type: 'success', text: `已生成新稿：${generated.title}` });
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '重新生成失败。',
-      });
+      setBanner({ type: 'error', text: 'Regeneration failed.' });
     } finally {
       setRegenerating(false);
     }
   }
 
   async function handleAutoGenerate() {
-    if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录。' });
-      return;
-    }
-
-    if (!selectedAccountId) {
-      setBanner({ type: 'error', text: '请先选择账号。' });
-      return;
-    }
-
+    if (!selectedAccountId) return;
     setAutoGenerating(true);
-    setBanner(null);
     try {
       const generated = await autoGenerateDraft(apiSecret.trim(), selectedAccountId, 'manual');
       await loadDraft(generated.draftId);
-      setBanner({
-        type: 'success',
-        text: generated.fallbackUsed
-          ? '自动生成完成（深搜降级为库内证据）。'
-          : '自动生成完成（已完成选题提炼与深搜）。',
-      });
-      await loadOpportunities(pagination?.page || 1);
+      void loadOpportunities(pagination?.page || 1);
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '自动生成失败。',
-      });
+      setBanner({ type: 'error', text: 'Auto-generation failed.' });
     } finally {
       setAutoGenerating(false);
     }
   }
 
   async function handlePlanAssets() {
-    if (!draft || !apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录并生成草稿。' });
-      return;
-    }
-
+    if (!draft) return;
     setPlanningAssets(true);
-    setBanner(null);
     try {
-      const result = await planDraftAssets(apiSecret.trim(), draft.id, {
-        imageCount: 4,
-        stylePreset: 'news-analysis',
-      });
+      await planDraftAssets(apiSecret.trim(), draft.id, { imageCount: 4, stylePreset: 'news-analysis' });
       await loadDraft(draft.id);
-      setBanner({ type: 'success', text: `已生成图片占位 ${result.imagePlan.length} 条。` });
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '生成图片占位失败。',
-      });
+      setBanner({ type: 'error', text: 'Asset planning failed.' });
     } finally {
       setPlanningAssets(false);
     }
   }
 
-  async function handlePublish() {
-    if (!draft) {
-      setBanner({ type: 'error', text: '请先生成草稿。' });
-      return;
-    }
-
-    if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录。' });
-      return;
-    }
-
-    setPublishing(true);
-    setBanner(null);
+  async function handleCopy() {
+    if (!draft?.content) return;
     try {
-      const result = await publishWechatDraft(apiSecret.trim(), draft.id, true);
-      await loadDraft(draft.id);
-      setBanner({
-        type: 'success',
-        text:
-          result.deliveryStage === 'draftbox'
-            ? '发布任务成功，内容已提交到公众号草稿箱。'
-            : '发布任务成功，内容已发布。',
-      });
+      await navigator.clipboard.writeText(draft.content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '提交发布任务失败。',
-      });
+      setBanner({ type: 'error', text: 'Copy failed.' });
+    }
+  }
+
+  async function handlePublish() {
+    if (!draft) return;
+    setPublishing(true);
+    try {
+      await publishWechatDraft(apiSecret.trim(), draft.id, true);
+      await loadDraft(draft.id);
+      setBanner({ type: 'success', text: 'Task submitted.' });
+    } catch (error) {
+      setBanner({ type: 'error', text: 'Publishing failed.' });
     } finally {
       setPublishing(false);
     }
   }
 
   async function handleRetry(jobId: string, allowReview: boolean) {
-    if (!apiSecret.trim()) {
-      setBanner({ type: 'error', text: '请先登录。' });
-      return;
-    }
-
-    if (!draft) {
-      setBanner({ type: 'error', text: '当前没有可重试的草稿。' });
-      return;
-    }
-
+    if (!draft) return;
     setRetryingJobId(jobId);
-    setBanner(null);
     try {
-      const result = await retryPublishJob(apiSecret.trim(), jobId, allowReview);
+      await retryPublishJob(apiSecret.trim(), jobId, allowReview);
       await loadDraft(draft.id);
-      setBanner({
-        type: 'success',
-        text: `重试完成：${result.status} (${result.deliveryStage})`,
-      });
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '重试失败。',
-      });
+      setBanner({ type: 'error', text: 'Retry failed.' });
     } finally {
       setRetryingJobId(null);
     }
   }
 
-  async function handleCopy() {
-    if (!draft?.content) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(draft.content);
-      setCopied(true);
-      setTimeout(() => {
-        setCopied(false);
-      }, 1500);
-    } catch {
-      setBanner({ type: 'error', text: '复制失败，请手工复制内容。' });
-    }
-  }
-
   async function handleSaveProfile() {
-    if (!apiSecret.trim() || !selectedAccountId) {
-      setBanner({ type: 'error', text: '请先登录并选择账号。' });
-      return;
-    }
-
+    if (!selectedAccountId) return;
     setSavingProfile(true);
-    setBanner(null);
     try {
-      const result = await updateAccountProfile(
-        apiSecret.trim(),
-        selectedAccountId,
-        buildProfilePayload(profileForm)
-      );
+      const result = await updateAccountProfile(apiSecret.trim(), selectedAccountId, buildProfilePayload(profileForm));
       setProfileForm(mapProfileForm(result.profile));
-      setProfileVersions(result.versions);
       setProfileUpdatedAt(result.profile.updatedAt);
-      setBanner({ type: 'success', text: '账号定位已保存并全局生效。' });
+      setBanner({ type: 'success', text: 'Profile updated.' });
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '保存账号定位失败。',
-      });
+      setBanner({ type: 'error', text: 'Update failed.' });
     } finally {
       setSavingProfile(false);
     }
   }
 
   async function handleRollback(versionId: string) {
-    if (!apiSecret.trim() || !selectedAccountId) {
-      setBanner({ type: 'error', text: '请先登录并选择账号。' });
-      return;
-    }
-
     setRollingBackVersionId(versionId);
-    setBanner(null);
     try {
       const result = await rollbackAccountProfile(apiSecret.trim(), selectedAccountId, versionId);
       setProfileForm(mapProfileForm(result.profile));
-      setProfileVersions(result.versions);
-      setProfileUpdatedAt(result.profile.updatedAt);
-      setBanner({ type: 'success', text: '已回滚并保存为当前版本。' });
+      setBanner({ type: 'success', text: 'Profile rolled back.' });
     } catch (error) {
-      setBanner({
-        type: 'error',
-        text: error instanceof Error ? error.message : '回滚账号定位失败。',
-      });
+      setBanner({ type: 'error', text: 'Rollback failed.' });
     } finally {
       setRollingBackVersionId(null);
     }
   }
 
-  function handleSelectOpportunity(opportunityId: string) {
-    setSelectedOpportunityId(opportunityId);
-    const picked = opportunities.find((item) => item.id === opportunityId);
-    if (picked) {
-      setSelectedAccountId(picked.accountId);
-    }
-  }
-
   if (authChecking) {
     return (
-      <section className="mx-auto max-w-[1440px]">
-        <div className="rounded-[2.5rem] border border-black/[0.05] bg-white/75 p-6 text-sm text-gray-600 shadow-[0_8px_40px_rgb(0,0,0,0.04)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1c1c1e]/75 dark:text-gray-300 lg:p-8">
-          正在校验登录状态...
+      <div className="flex items-center justify-center h-48 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-3 text-slate-400 text-sm font-bold">
+          <div className="w-4 h-4 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+          AUTHORIZING...
         </div>
-      </section>
+      </div>
     );
   }
 
   if (!authUser) {
     return (
-      <section className="mx-auto max-w-[1440px]">
-        <div className="rounded-[2.5rem] border border-black/[0.05] bg-white/75 p-6 shadow-[0_8px_40px_rgb(0,0,0,0.04)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1c1c1e]/75 lg:p-8">
-          <h2 className="mb-3 text-2xl font-semibold tracking-tight text-black dark:text-white">
-            内容生产操作台登录
-          </h2>
-          <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">登录后可获取候选、生成草稿并发布。</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            <input
-              value={loginUsername}
-              onChange={(event) => setLoginUsername(event.target.value)}
-              placeholder="登录账号"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-            <input
-              type="password"
-              value={loginPassword}
-              onChange={(event) => setLoginPassword(event.target.value)}
-              placeholder="登录密码"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void handleLogin();
-                }
-              }}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => void handleLogin()}
-            disabled={authSubmitting}
-            className="mt-4 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 dark:bg-white dark:text-black"
-          >
-            {authSubmitting ? '登录中...' : '登录'}
-          </button>
-          {banner && (
-            <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-medium ${bannerClass(banner.type)}`}>
-              {banner.text}
-            </div>
-          )}
+      <div className="max-w-md mx-auto bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="mb-8 text-center">
+          <h2 className="text-xl font-black tracking-tight mb-2">Access Control</h2>
+          <p className="text-sm text-slate-500 font-medium">Please sign in to access the Trend Engine.</p>
         </div>
-      </section>
+        <div className="space-y-4">
+          <input
+            value={loginUsername}
+            onChange={(e) => setLoginUsername(e.target.value)}
+            placeholder="Username"
+            className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium transition-all"
+          />
+          <input
+            type="password"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            placeholder="Password"
+            className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium transition-all"
+            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+          />
+          <button
+            onClick={handleLogin}
+            disabled={authSubmitting}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-black tracking-wider hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/20"
+          >
+            {authSubmitting ? 'SIGNING IN...' : 'CONTINUE'}
+          </button>
+        </div>
+        {banner && (
+          <div className={`mt-6 px-4 py-3 rounded-xl text-xs font-bold border ${bannerClass(banner.type)}`}>
+            {banner.text}
+          </div>
+        )}
+      </div>
     );
   }
 
   return (
-    <section className="mx-auto max-w-[1440px]">
-      <div className="rounded-[2.5rem] border border-black/[0.05] bg-white/75 p-6 shadow-[0_8px_40px_rgb(0,0,0,0.04)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1c1c1e]/75 lg:p-8">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight text-black dark:text-white">内容生产操作台</h2>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/accounts/settings"
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-black transition hover:bg-black/[0.03] dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
-            >
-              账号设置页
-            </Link>
-            <button
-              type="button"
-              onClick={() => void loadOpportunities(1)}
-              disabled={loadingOpportunities}
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
-            >
-              {loadingOpportunities ? '加载中...' : '刷新机会'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              disabled={authSubmitting}
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
-            >
-              {authSubmitting ? '退出中...' : `退出登录（${authUser}）`}
-            </button>
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg">
+            <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-tight">Production Desk</h2>
+            <p className="text-[10px] font-bold text-slate-400">LOGGED IN AS: {authUser}</p>
           </div>
         </div>
-
-        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <input
-            type="number"
-            min={1}
-            max={200}
-            value={realtimeTopN}
-            onChange={(event) =>
-              setRealtimeTopN(Math.min(200, Math.max(1, Number(event.target.value) || 50)))
-            }
-            placeholder="候选数 TopN（1-200）"
-            className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-          />
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as OpportunityStatus)}
-            className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => void loadOpportunities(1)}
+            disabled={loadingOpportunities}
+            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-[10px] font-black rounded-lg hover:bg-slate-200 transition-colors uppercase"
           >
-            {OPPORTUNITY_STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-          <div className="flex flex-wrap gap-2">
-            <input
-              type="text"
-              value={accountIdFilter}
-              onChange={(event) => setAccountIdFilter(event.target.value)}
-              placeholder="accountId（可选）"
-              className="min-w-0 flex-1 rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-            <button
-              type="button"
-              onClick={() => void handleSync(false)}
-              disabled={syncing || !selectedAccountId}
-              className="rounded-2xl bg-black px-4 py-2.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black"
-            >
-              {syncing ? '处理中' : '获取候选'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSync(true)}
-              disabled={syncing || !selectedAccountId}
-              className="rounded-2xl border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
-            >
-              {syncing ? '处理中' : '刷新候选'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleGenerateFromRealtimeSession()}
-              disabled={generatingRealtime || !realtimeSession || !selectedAccountId}
-              className="rounded-2xl border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
-            >
-              {generatingRealtime ? '生成中' : '候选生成草稿'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleAutoGenerate()}
-              disabled={autoGenerating || !selectedAccountId}
-              className="rounded-2xl border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
-            >
-              {autoGenerating ? '自动生成中' : '自动选题生成'}
-            </button>
-          </div>
+            {loadingOpportunities ? 'Loading...' : 'Refresh'}
+          </button>
+          <Link
+            href="/accounts/settings"
+            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-[10px] font-black rounded-lg hover:bg-slate-200 transition-colors uppercase"
+          >
+            Settings
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="px-3 py-1.5 text-[10px] font-black text-red-500 bg-red-50 dark:bg-red-500/10 rounded-lg hover:bg-red-100 transition-colors uppercase"
+          >
+            Log out
+          </button>
         </div>
+      </div>
 
-        {banner && (
-          <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm font-medium ${bannerClass(banner.type)}`}>
-            {banner.text}
-          </div>
-        )}
-
-        {realtimeSession && (
-          <div className="mb-5 rounded-2xl border border-black/[0.06] bg-white/80 px-4 py-3 text-xs text-gray-600 dark:border-white/[0.08] dark:bg-[#2a2a2d]/80 dark:text-gray-300">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span>session: {realtimeSession.sessionId}</span>
-              <span>topN: {realtimeSession.topN}</span>
-              <span>候选: {realtimeSession.counts.storedCount}</span>
-              <span>快照: {realtimeSession.counts.snapshotCount}</span>
-              <span>有效期至: {formatTime(realtimeSession.expiresAt)}</span>
-              <span>{realtimeSession.reused ? '已复用会话' : '新会话'}</span>
-            </div>
-          </div>
-        )}
-
-        <div className="mb-5 rounded-3xl border border-black/[0.05] bg-white/70 p-4 dark:border-white/[0.08] dark:bg-[#1c1c1e]/70">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-base font-semibold text-black dark:text-white">账号定位（全局生效）</h3>
-            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span>更新时间：{profileUpdatedAt ? formatTime(profileUpdatedAt) : '-'}</span>
-              {loadingProfile && <span>加载中...</span>}
-            </div>
-          </div>
-
-          <div className="mb-3 grid gap-3 md:grid-cols-3">
-            <select
-              value={selectedAccountId}
-              onChange={(event) => setSelectedAccountId(event.target.value)}
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            >
-              <option value="">选择账号</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} ({account.platform})
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={profileForm.growthGoal}
-              onChange={(event) => setProfileForm((prev) => ({ ...prev, growthGoal: event.target.value }))}
-              placeholder="增长目标"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-            <input
-              type="number"
-              min={800}
-              max={3000}
-              value={profileForm.preferredLength}
-              onChange={(event) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  preferredLength: Number(event.target.value) || 1800,
-                }))
-              }
-              placeholder="目标字数"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-          </div>
-
-          {accounts.length === 0 && (
-            <p className="mb-3 text-xs text-amber-700 dark:text-amber-300">
-              尚未配置账号。请先前往“账号定位设置”页创建账号，保存后刷新本页。
-            </p>
-          )}
-
-          <div className="mb-3 grid gap-3 md:grid-cols-2">
-            <input
-              type="text"
-              value={profileForm.audience}
-              onChange={(event) => setProfileForm((prev) => ({ ...prev, audience: event.target.value }))}
-              placeholder="目标读者"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-            <input
-              type="text"
-              value={profileForm.tone}
-              onChange={(event) => setProfileForm((prev) => ({ ...prev, tone: event.target.value }))}
-              placeholder="语气风格"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-          </div>
-
-          <div className="mb-3 grid gap-3 md:grid-cols-2">
-            <input
-              type="text"
-              value={profileForm.contentPromise}
-              onChange={(event) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  contentPromise: event.target.value,
-                }))
-              }
-              placeholder="内容承诺"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-            <input
-              type="text"
-              value={profileForm.ctaStyle}
-              onChange={(event) => setProfileForm((prev) => ({ ...prev, ctaStyle: event.target.value }))}
-              placeholder="CTA 风格"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-          </div>
-
-          <div className="mb-3 grid gap-3 md:grid-cols-2">
-            <input
-              type="text"
-              value={profileForm.painPoints}
-              onChange={(event) => setProfileForm((prev) => ({ ...prev, painPoints: event.target.value }))}
-              placeholder="读者痛点（分号分隔）"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-            <input
-              type="text"
-              value={profileForm.forbiddenTopics}
-              onChange={(event) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  forbiddenTopics: event.target.value,
-                }))
-              }
-              placeholder="禁区（分号分隔）"
-              className="rounded-2xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-black/25 dark:border-white/[0.1] dark:bg-[#2a2a2d] dark:text-white dark:focus:border-white/30"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleSaveProfile()}
-              disabled={savingProfile || loadingProfile || !selectedAccountId}
-              className="rounded-full bg-black px-4 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black"
-            >
-              {savingProfile ? '保存中...' : '保存定位'}
-            </button>
-            {profileVersions.slice(0, 3).map((version) => (
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                Discovery & Synthesis
+              </h3>
               <button
-                key={version.id}
-                type="button"
-                onClick={() => void handleRollback(version.id)}
-                disabled={rollingBackVersionId === version.id}
-                className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
+                onClick={() => setShowAccountSettings(!showAccountSettings)}
+                className="text-[10px] font-black text-indigo-600 hover:underline uppercase"
               >
-                {rollingBackVersionId === version.id ? '回滚中...' : `回滚 ${formatTime(version.createdAt)}`}
+                {showAccountSettings ? 'Hide Config' : 'Show Config'}
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        <div className="grid gap-5 xl:grid-cols-[1.1fr_1fr]">
-          <div className="space-y-4">
+            <div className={`space-y-6 transition-all ${showAccountSettings ? 'block' : 'hidden'}`}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase">Target Audience</label>
+                  <input
+                    value={profileForm.audience}
+                    onChange={(e) => setProfileForm(p => ({ ...p, audience: e.target.value }))}
+                    className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none"
+                    placeholder="e.g. Tech Enthusiasts"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase">Tone of Voice</label>
+                  <input
+                    value={profileForm.tone}
+                    onChange={(e) => setProfileForm(p => ({ ...p, tone: e.target.value }))}
+                    className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none"
+                    placeholder="e.g. Professional yet Witty"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={savingProfile || !selectedAccountId}
+                  className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-black rounded-xl uppercase hover:opacity-90 transition-all"
+                >
+                  {savingProfile ? 'Saving...' : 'Save Profile'}
+                </button>
+              </div>
+              <div className="h-[1px] bg-slate-100 dark:bg-slate-800"></div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3 mt-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase">Active Account</label>
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none appearance-none"
+                >
+                  <option value="">Select Account</option>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase">Opportunity Filter</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as OpportunityStatus)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none appearance-none"
+                >
+                  {OPPORTUNITY_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="flex items-end pb-0.5">
+                <button
+                  onClick={() => handleSync(false)}
+                  disabled={syncing || !selectedAccountId}
+                  className="w-full py-2 bg-indigo-600 text-white text-[11px] font-black rounded-xl uppercase hover:bg-indigo-700 transition-all shadow-md shadow-indigo-500/10"
+                >
+                  {syncing ? 'Scanning...' : 'Sync Opportunities'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
             <OpportunityList
               opportunities={opportunities}
               loading={loadingOpportunities}
               selectedOpportunityId={selectedOpportunityId}
               generatingOpportunityId={generatingOpportunityId}
-              onSelectOpportunity={handleSelectOpportunity}
-              onGenerateDraft={(id) => {
-                void handleGenerate(id);
+              onSelectOpportunity={(id) => {
+                setSelectedOpportunityId(id);
+                const p = opportunities.find(o => o.id === id);
+                if (p) setSelectedAccountId(p.accountId);
               }}
+              onGenerateDraft={handleGenerate}
             />
-
-            {selectedOpportunity && (
-              <div className="rounded-2xl border border-black/[0.06] bg-white/80 px-4 py-3 text-xs text-gray-600 dark:border-white/[0.08] dark:bg-[#2a2a2d]/80 dark:text-gray-300">
-                当前机会账号：{selectedOpportunity.account.name} ({selectedOpportunity.account.id})
-              </div>
-            )}
-
-            {pagination && (
-              <div className="flex items-center justify-between rounded-2xl border border-black/[0.06] bg-white/80 px-4 py-3 text-xs text-gray-600 dark:border-white/[0.08] dark:bg-[#2a2a2d]/80 dark:text-gray-300">
-                <span>
-                  第 {pagination.page} / {Math.max(1, pagination.totalPages)} 页（共 {pagination.total} 条）
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void loadOpportunities(pagination.page - 1)}
-                    disabled={!pagination.hasPrev || loadingOpportunities}
-                    className="rounded-full border border-black/10 px-3 py-1 font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-white dark:hover:bg-white/[0.06]"
-                  >
-                    上一页
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void loadOpportunities(pagination.page + 1)}
-                    disabled={!pagination.hasNext || loadingOpportunities}
-                    className="rounded-full border border-black/10 px-3 py-1 font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-white dark:hover:bg-white/[0.06]"
-                  >
-                    下一页
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            <DraftPreview
-              draft={draft}
-              loading={loadingDraft}
-              publishing={publishing}
-              regenerating={regenerating}
-              planningAssets={planningAssets}
-              copied={copied}
-              onCopy={() => {
-                void handleCopy();
-              }}
-              onRegenerate={() => {
-                void handleRegenerate();
-              }}
-              onPlanAssets={() => {
-                void handlePlanAssets();
-              }}
-              onPublish={() => {
-                void handlePublish();
-              }}
-            />
-            {(loadingSynthesis || synthesisReport) && (
-              <div className="rounded-2xl border border-black/[0.06] bg-white/80 px-4 py-3 text-xs text-gray-700 dark:border-white/[0.08] dark:bg-[#2a2a2d]/80 dark:text-gray-200">
-                <p className="mb-2 text-sm font-semibold">选题追溯</p>
-                {loadingSynthesis && <p>加载中...</p>}
-                {!loadingSynthesis && synthesisReport && (
-                  <div className="space-y-2">
-                    <p>
-                      <span className="text-gray-500 dark:text-gray-300">最终命题：</span>
-                      {synthesisReport.report.finalTopic}
-                    </p>
-                    {synthesisReport.report.oneLiner && (
-                      <p>
-                        <span className="text-gray-500 dark:text-gray-300">一句话：</span>
-                        {synthesisReport.report.oneLiner}
-                      </p>
-                    )}
-                    <p>
-                      <span className="text-gray-500 dark:text-gray-300">归并理由：</span>
-                      {synthesisReport.report.mergeRationale.slice(0, 2).join('；') || '-'}
-                    </p>
-                    <p>
-                      <span className="text-gray-500 dark:text-gray-300">选择理由：</span>
-                      {synthesisReport.report.selectionRationale.slice(0, 2).join('；') || '-'}
-                    </p>
-                    <p>
-                      <span className="text-gray-500 dark:text-gray-300">深搜：</span>
-                      {synthesisReport.researches.length > 0
-                        ? `${synthesisReport.researches[0].sources.length} 条来源（${
-                            synthesisReport.researches[0].fallbackUsed ? '已降级' : '联网'
-                          }）`
-                        : '无'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-            <PublishJobList
-              jobs={draft?.publishJobs || []}
-              retryingJobId={retryingJobId}
-              onRetry={(jobId, allowReview) => {
-                void handleRetry(jobId, allowReview);
-              }}
-            />
+            <div className="space-y-6">
+              <DraftPreview
+                draft={draft}
+                loading={loadingDraft}
+                publishing={publishing}
+                regenerating={regenerating}
+                planningAssets={planningAssets}
+                copied={copied}
+                onCopy={handleCopy}
+                onRegenerate={handleRegenerate}
+                onPlanAssets={handlePlanAssets}
+                onPublish={handlePublish}
+              />
+              <PublishJobList
+                jobs={draft?.publishJobs || []}
+                retryingJobId={retryingJobId}
+                onRetry={handleRetry}
+              />
+            </div>
           </div>
         </div>
+
+        <aside className="space-y-6">
+          <div className="bg-slate-900 dark:bg-slate-800 text-white p-6 rounded-2xl shadow-xl">
+            <h4 className="text-[10px] font-black tracking-widest text-indigo-400 mb-4 uppercase">Direct Automation</h4>
+            <div className="space-y-4">
+              <button
+                onClick={handleAutoGenerate}
+                disabled={autoGenerating || !selectedAccountId}
+                className="w-full py-3 bg-white text-slate-900 rounded-xl text-xs font-black uppercase hover:bg-slate-100 transition-all flex items-center justify-center gap-2"
+              >
+                {autoGenerating ? (
+                  <div className="w-3 h-3 border-2 border-slate-900/20 border-t-slate-900 rounded-full animate-spin"></div>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                )}
+                Auto AI Flow
+              </button>
+              <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+                Trigger end-to-end AI synthesis from current trends for the active profile.
+              </p>
+            </div>
+          </div>
+
+          {banner && (
+            <div className={`px-4 py-3 rounded-xl text-[10px] font-bold border animate-in slide-in-from-right-2 duration-300 ${bannerClass(banner.type)}`}>
+              <div className="flex gap-2">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                {banner.text}
+              </div>
+            </div>
+          )}
+
+          {synthesisReport && (
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <h4 className="text-[10px] font-black text-slate-400 mb-4 uppercase">Synthesis Trace</h4>
+              <div className="space-y-3">
+                <div className="text-xs font-bold leading-snug">{synthesisReport.report.finalTopic}</div>
+                <p className="text-[10px] text-slate-500 leading-relaxed italic">
+                  &quot;{synthesisReport.report.oneLiner}&quot;
+                </p>
+              </div>
+            </div>
+          )}
+        </aside>
       </div>
-    </section>
+    </div>
   );
 }

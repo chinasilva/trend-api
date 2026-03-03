@@ -46,6 +46,87 @@ function normalizeImageCount(value: number | undefined) {
   return Math.min(5, Math.max(3, Math.round(value)));
 }
 
+const TEMPLATE_NOISE_PATTERNS: RegExp[] = [
+  /信息过载/g,
+  /情绪消耗/g,
+  /长期红利/g,
+  /如果你也有这种感受/g,
+  /先声明/g,
+  /到这里[，,]/g,
+  /围观变成能力/g,
+  /普通人该如何/g,
+];
+
+function countPatternHits(text: string, pattern: RegExp) {
+  const matches = text.match(pattern);
+  return matches ? matches.length : 0;
+}
+
+function analyzeReadability(content: string, outlineCount: number) {
+  const normalized = content.replace(/\r/g, '').trim();
+  const headingCount = (normalized.match(/^##\s+/gm) || []).length;
+  const separatorCount = (normalized.match(/^---$/gm) || []).length;
+
+  const paragraphs = normalized
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter((item) => item && !item.startsWith('#') && !item.startsWith('- '));
+
+  const paragraphLengths = paragraphs.map((item) => item.replace(/\s+/g, '').length);
+  const longParagraphCount = paragraphLengths.filter((item) => item > 160).length;
+  const longParagraphRatio = paragraphs.length > 0 ? longParagraphCount / paragraphs.length : 1;
+
+  const sentenceLengths = normalized
+    .replace(/^#+\s+/gm, '')
+    .split(/[。！？!?]/)
+    .map((item) => item.replace(/\s+/g, '').trim())
+    .filter(Boolean)
+    .map((item) => item.length);
+
+  const avgSentenceLength =
+    sentenceLengths.length > 0
+      ? sentenceLengths.reduce((sum, value) => sum + value, 0) / sentenceLengths.length
+      : 40;
+  const longSentenceRatio =
+    sentenceLengths.length > 0
+      ? sentenceLengths.filter((item) => item > 28).length / sentenceLengths.length
+      : 1;
+
+  const templateNoiseHits = TEMPLATE_NOISE_PATTERNS.reduce(
+    (sum, pattern) => sum + countPatternHits(normalized, pattern),
+    0
+  );
+
+  let score = 100;
+  score -= Math.max(0, Math.round((avgSentenceLength - 24) * 2));
+  score -= Math.round(longSentenceRatio * 28);
+  score -= Math.round(longParagraphRatio * 24);
+  score -= Math.min(24, templateNoiseHits * 4);
+
+  if (headingCount < 3) {
+    score -= 8;
+  }
+  if (headingCount > 6) {
+    score -= Math.min(18, (headingCount - 6) * 4);
+  }
+  if (outlineCount < 4) {
+    score -= 8;
+  }
+  if (separatorCount > 1) {
+    score -= Math.min(10, (separatorCount - 1) * 5);
+  }
+
+  return {
+    score: clamp(Math.round(score), 35, 100),
+    headingCount,
+    separatorCount,
+    avgSentenceLength,
+    longSentenceRatio,
+    longParagraphRatio,
+    templateNoiseHits,
+  };
+}
+
 export function buildContentPack(params: {
   topicTitle: string;
   accountName: string;
@@ -88,9 +169,11 @@ export function buildQualityReport(params: {
   outlineCount: number;
 }): DraftQualityReport {
   const textLength = params.content.replace(/\s+/g, '').length;
-  const readability = clamp(Math.round((params.outlineCount >= 4 ? 1 : 0.7) * 100), 40, 100);
+  const readabilitySignals = analyzeReadability(params.content, params.outlineCount);
+  const readability = readabilitySignals.score;
+  const preferredLength = clamp(params.profile.preferredLength, 900, 1300);
   const lengthScore = clamp(
-    Math.round(100 - Math.abs(textLength - params.profile.preferredLength) / 15),
+    Math.round(100 - Math.abs(textLength - preferredLength) / 10),
     35,
     100
   );
@@ -117,14 +200,32 @@ export function buildQualityReport(params: {
   );
 
   const warnings: string[] = [];
-  if (textLength < 1000) {
-    warnings.push('内容长度偏短，建议补充分析层。');
+  if (textLength < 800) {
+    warnings.push('内容长度偏短，信息密度不足。');
+  }
+  if (textLength > 1600) {
+    warnings.push('内容偏长，建议压缩到移动端更易读的篇幅。');
   }
   if (params.evidencesCount < 3) {
     warnings.push('证据点不足，建议补充跨平台事实。');
   }
   if (fitSignals < 2) {
     warnings.push('账号画像命中不足，建议强化受众语境。');
+  }
+  if (readabilitySignals.avgSentenceLength > 26) {
+    warnings.push('句子偏长，建议多用短句并减少复合句。');
+  }
+  if (readabilitySignals.longParagraphRatio > 0.35) {
+    warnings.push('长段落过多，建议拆段提升滑读体验。');
+  }
+  if (readabilitySignals.headingCount > 6) {
+    warnings.push('小标题过多，结构显得模板化。');
+  }
+  if (readabilitySignals.templateNoiseHits >= 3) {
+    warnings.push('模板化空话偏多，建议改成具体场景和动作。');
+  }
+  if (readabilitySignals.separatorCount > 1) {
+    warnings.push('分隔线使用过多，影响阅读连贯性。');
   }
 
   return {
