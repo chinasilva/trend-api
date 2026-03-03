@@ -15,45 +15,22 @@ interface DraftPreviewProps {
   onPlanAssets: () => void;
 }
 
-function statusBadgeClass(status: DraftDetail['status']) {
+function statusTag(status: DraftDetail['status']) {
+  const base = "text-[9px] font-black px-1.5 py-0.5 rounded uppercase border";
   switch (status) {
     case 'READY':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200';
+      return `${base} bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20`;
     case 'REVIEW':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200';
+      return `${base} bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20`;
     case 'BLOCKED':
-      return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200';
+      return `${base} bg-red-50 text-red-600 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20`;
     case 'SUBMITTED':
-      return 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200';
+      return `${base} bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20`;
     case 'PUBLISHED':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200';
+      return `${base} bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 dark:border-white`;
     default:
-      return 'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300';
+      return `${base} bg-slate-50 text-slate-400 border-slate-100 dark:bg-slate-900 dark:text-slate-600 dark:border-slate-800`;
   }
-}
-
-function statusHint(status: DraftDetail['status']) {
-  if (status === 'SUBMITTED') {
-    return '已提交到公众号草稿箱，待人工发布。';
-  }
-  if (status === 'PUBLISHED') {
-    return '已发布。';
-  }
-  if (status === 'REVIEW') {
-    return '当前草稿需要人工复核。';
-  }
-  if (status === 'BLOCKED') {
-    return '当前草稿被风控阻断，不可发布。';
-  }
-  return '可提交发布任务。';
-}
-
-function renderScore(value: number | undefined) {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    return '--';
-  }
-
-  return String(Math.round(value));
 }
 
 export default function DraftPreview({
@@ -70,110 +47,103 @@ export default function DraftPreview({
 }: DraftPreviewProps) {
   if (loading) {
     return (
-      <div className="rounded-3xl border border-black/[0.05] bg-white/70 p-8 text-center text-sm text-gray-500 dark:border-white/[0.08] dark:bg-[#1c1c1e]/70 dark:text-gray-400">
-        正在加载草稿...
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center h-full flex flex-col items-center justify-center">
+        <div className="w-6 h-6 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-3"></div>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Compiling Draft...</p>
       </div>
     );
   }
 
   if (!draft) {
     return (
-      <div className="rounded-3xl border border-black/[0.05] bg-white/70 p-8 text-center text-sm text-gray-500 dark:border-white/[0.08] dark:bg-[#1c1c1e]/70 dark:text-gray-400">
-        选择机会后点击“生成草稿”，这里会显示正文与发布状态。
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center h-full flex flex-col items-center justify-center border-dashed">
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-loose max-w-[200px]">
+          Select an opportunity to generate AI content
+        </p>
       </div>
     );
   }
 
-  const publishDisabled =
-    publishing ||
-    draft.status === 'BLOCKED' ||
-    draft.status === 'REVIEW' ||
-    draft.status === 'SUBMITTED' ||
-    draft.status === 'PUBLISHED';
+  const publishDisabled = publishing || ['BLOCKED', 'REVIEW', 'SUBMITTED', 'PUBLISHED'].includes(draft.status);
 
   return (
-    <div className="rounded-3xl border border-black/[0.05] bg-white/80 p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#1c1c1e]/80">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(draft.status)}`}>
-          {draft.status}
-        </span>
-        <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-white/[0.08] dark:text-gray-300">
-          风险 {draft.riskLevel}
-        </span>
-        <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-white/[0.08] dark:text-gray-300">
-          模型 {draft.model}
-        </span>
-        <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-white/[0.08] dark:text-gray-300">
-          质量 {renderScore(draft.qualityReport?.score)}
-        </span>
-      </div>
-
-      <h3 className="mb-2 text-lg font-semibold text-black dark:text-white">{draft.title}</h3>
-      <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">{statusHint(draft.status)}</p>
-
-      {draft.contentPack && (
-        <div className="mb-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 text-xs text-gray-700 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-300">
-          <p className="font-semibold">核心角度：{draft.contentPack.coreAngle}</p>
-          <p className="mt-1">目标读者：{draft.contentPack.targetReader}</p>
-          {draft.qualityReport?.warnings && draft.qualityReport.warnings.length > 0 && (
-            <p className="mt-2 text-amber-600 dark:text-amber-300">
-              质量提醒：{draft.qualityReport.warnings.join('；')}
-            </p>
-          )}
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm flex flex-col h-full">
+      <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={statusTag(draft.status)}>{draft.status}</span>
+          <span className="text-[9px] font-black text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded uppercase">
+            RISK: {draft.riskLevel}
+          </span>
         </div>
-      )}
-
-      <div className="mb-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
-        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap text-sm leading-6 text-gray-800 dark:text-gray-200">
-          {draft.content}
-        </pre>
+        <div className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase">
+          MODEL: {draft.model}
+        </div>
       </div>
 
-      {draft.imagePlaceholders && draft.imagePlaceholders.length > 0 && (
-        <div className="mb-4 rounded-2xl border border-black/[0.06] bg-white/70 p-3 text-xs text-gray-700 dark:border-white/[0.08] dark:bg-[#2a2a2d]/70 dark:text-gray-300">
-          <p className="mb-2 font-semibold">图片占位方案（{draft.imagePlaceholders.length}）</p>
-          <div className="space-y-2">
-            {draft.imagePlaceholders.map((item) => (
-              <div key={`${draft.id}-${item.slot}`}>
-                <p>#{item.slot} {item.purpose} · 锚点：{item.placementAnchor}</p>
-                <p className="line-clamp-2 text-gray-500 dark:text-gray-400">{item.prompt}</p>
-              </div>
-            ))}
+      <div className="p-6 flex-1 overflow-auto bg-slate-50/20 dark:bg-slate-950/20">
+        <h3 className="text-lg font-black tracking-tight text-slate-900 dark:text-white mb-6 leading-tight">
+          {draft.title}
+        </h3>
+
+        {draft.contentPack && (
+          <div className="mb-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 text-[11px] font-medium text-slate-600 dark:text-slate-400 space-y-2">
+            <p><span className="font-black text-slate-400 dark:text-slate-500 uppercase mr-2 text-[9px]">Angle:</span> {draft.contentPack.coreAngle}</p>
+            <p><span className="font-black text-slate-400 dark:text-slate-500 uppercase mr-2 text-[9px]">Target:</span> {draft.contentPack.targetReader}</p>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="flex flex-wrap gap-3">
+        <div className="prose prose-slate dark:prose-invert max-w-none">
+          <pre className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700 dark:text-slate-300 font-sans border-none bg-transparent p-0 m-0">
+            {draft.content}
+          </pre>
+        </div>
+
+        {draft.imagePlaceholders && draft.imagePlaceholders.length > 0 && (
+          <div className="mt-10 pt-6 border-t border-slate-100 dark:border-slate-800">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Visual Assets</h4>
+            <div className="space-y-4">
+              {draft.imagePlaceholders.map((item) => (
+                <div key={item.slot} className="p-3 rounded-lg bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-slate-700/50">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-black text-indigo-500 uppercase">Slot #{item.slot}</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">{item.placementAnchor}</span>
+                  </div>
+                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 line-clamp-1 mb-1">{item.purpose}</p>
+                  <p className="text-[10px] text-slate-400 leading-normal italic">{item.prompt}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
         <button
-          type="button"
           onClick={onCopy}
-          className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-black transition hover:bg-black/[0.03] dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
+          className="px-3 py-2 bg-slate-50 dark:bg-slate-800 text-[10px] font-black rounded-lg hover:bg-slate-100 transition-colors uppercase border border-slate-200 dark:border-slate-700"
         >
-          {copied ? '已复制' : '复制正文'}
+          {copied ? 'Copied' : 'Copy'}
         </button>
         <button
-          type="button"
           onClick={onRegenerate}
           disabled={regenerating}
-          className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
+          className="px-3 py-2 bg-slate-50 dark:bg-slate-800 text-[10px] font-black rounded-lg hover:bg-slate-100 transition-colors uppercase border border-slate-200 dark:border-slate-700"
         >
-          {regenerating ? '重生中...' : '重新生成'}
+          {regenerating ? 'Retrying...' : 'Regenerate'}
         </button>
         <button
-          type="button"
           onClick={onPlanAssets}
           disabled={planningAssets}
-          className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]"
+          className="px-3 py-2 bg-slate-50 dark:bg-slate-800 text-[10px] font-black rounded-lg hover:bg-slate-100 transition-colors uppercase border border-slate-200 dark:border-slate-700"
         >
-          {planningAssets ? '规划中...' : '生成配图占位'}
+          {planningAssets ? 'Planning...' : 'Visuals'}
         </button>
         <button
-          type="button"
           onClick={onPublish}
           disabled={publishDisabled}
-          className="rounded-full bg-black px-4 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black"
+          className="col-span-2 sm:col-span-1 px-4 py-2 bg-indigo-600 text-white text-[10px] font-black rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/20 uppercase"
         >
-          {publishing ? '提交中...' : '提交发布任务'}
+          {publishing ? 'Submitting...' : 'Submit to WeChat'}
         </button>
       </div>
     </div>

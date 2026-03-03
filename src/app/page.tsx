@@ -194,39 +194,6 @@ export default function Home() {
     ]);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#F5F5F7] dark:bg-[#000000] flex items-center justify-center selection:bg-[#007AFF] selection:text-white">
-        <div className="flex flex-col items-center gap-5">
-          <div className="w-10 h-10 border-[3px] border-black/10 dark:border-white/10 border-t-black/80 dark:border-t-white/80 rounded-full animate-spin"></div>
-          <p className="text-gray-500 dark:text-gray-400 text-[15px] font-medium tracking-wide">加载数据中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-[#F5F5F7] dark:bg-[#000000] flex items-center justify-center selection:bg-[#007AFF] selection:text-white">
-        <div className="bg-white/80 dark:bg-[#1c1c1e]/80 backdrop-blur-2xl p-10 rounded-[2.5rem] shadow-[0_8px_40px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_40px_rgb(0,0,0,0.4)] border border-black/[0.04] dark:border-white/[0.05] text-center max-w-sm w-full mx-4">
-          <div className="w-14 h-14 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5">
-            <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-[20px] font-semibold text-gray-900 dark:text-white mb-2 tracking-tight">出现异常</h2>
-          <p className="text-[15px] text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full py-3.5 bg-black text-white dark:bg-white dark:text-black rounded-full text-[15px] font-medium hover:scale-[1.02] active:scale-[0.98] transition-all"
-          >
-            重新尝试
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const handleSelectSnapshot = async (snapshotAt: string) => {
     const incomingSnapshotKey = toSnapshotKey(snapshotAt);
     if (!incomingSnapshotKey || incomingSnapshotKey === selectedSnapshotKey || snapshotLoading) {
@@ -295,6 +262,39 @@ export default function Home() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium tracking-wide">Syncing Trends...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 text-center max-w-sm w-full">
+          <div className="w-12 h-12 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Service Interrupted</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const renderContent = () => {
     if (!trendsData) return null;
 
@@ -323,95 +323,93 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7] dark:bg-[#000000] selection:bg-[#007AFF] selection:text-white font-sans text-gray-900 dark:text-gray-100 pb-24">
-      {/* Background decoration elements */}
-      <div className="fixed top-0 left-0 w-full h-[60vh] bg-gradient-to-b from-white/80 to-transparent dark:from-white/[0.03] pointer-events-none -z-10 mix-blend-overlay"></div>
-      
-      <div className="max-w-[1440px] mx-auto px-5 sm:px-8 lg:px-10 py-16 lg:py-20">
-        <header className="mb-16 text-center">
-          <h1 className="text-[40px] sm:text-[56px] font-bold tracking-tight text-black dark:text-white mb-5 drop-shadow-sm leading-tight">
-            全网热榜聚合
-          </h1>
-          <p className="text-[17px] sm:text-[19px] text-gray-500 dark:text-gray-400 font-medium tracking-wide flex items-center justify-center gap-3 flex-wrap">
-            感知数据脉搏
-            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-700"></span>
-            更新于 {(trendsData?.snapshotAt || trendsData?.updatedAt)
-              ? formatDateParts(trendsData?.snapshotAt || trendsData?.updatedAt || '').fullLabel
-              : '未知时间'}
-          </p>
-        </header>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 pb-20">
+      <header className="sticky top-0 z-50 glass-effect border-b border-slate-200 dark:border-slate-800">
+        <div className="max-w-[1440px] mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <span className="text-xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
+              TRENDPULSE
+            </span>
+          </div>
 
-        <div className="mb-10 flex justify-center">
-          <div className="inline-flex rounded-full border border-black/[0.08] bg-white/80 p-1 shadow-sm dark:border-white/[0.12] dark:bg-[#1c1c1e]/80">
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
             <button
-              type="button"
               onClick={() => setActiveMode('trends')}
-              className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
                 activeMode === 'trends'
-                  ? 'bg-black text-white dark:bg-white dark:text-black'
-                  : 'text-black hover:bg-black/[0.03] dark:text-white dark:hover:bg-white/[0.06]'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
               }`}
             >
-              热榜浏览
+              BROWSE
             </button>
             <button
-              type="button"
               onClick={() => setActiveMode('content')}
-              className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
                 activeMode === 'content'
-                  ? 'bg-black text-white dark:bg-white dark:text-black'
-                  : 'text-black hover:bg-black/[0.03] dark:text-white dark:hover:bg-white/[0.06]'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
               }`}
             >
-              内容生产
+              ENGINE
             </button>
           </div>
         </div>
+      </header>
 
-        {activeMode === 'content' && (
-          <div className="mb-14 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
-            <div className="mb-4 text-center text-sm text-gray-500 dark:text-gray-400">
-              基于实时热榜数据计算候选、生成草稿并提交公众号发布任务
-            </div>
+      <main className="max-w-[1440px] mx-auto px-6 py-12">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white mb-2">
+              Real-time Trend Engine
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-2 text-sm">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Last updated: {(trendsData?.snapshotAt || trendsData?.updatedAt)
+                ? formatDateParts(trendsData?.snapshotAt || trendsData?.updatedAt || '').fullLabel
+                : 'Searching...'}
+            </p>
+          </div>
+        </div>
+
+        {activeMode === 'content' ? (
+          <div className="animate-in fade-in duration-500">
             <ContentPipelinePanel />
           </div>
-        )}
-
-        {activeMode === 'trends' && (
+        ) : (
           <>
-            <section className="mb-14 max-w-5xl mx-auto bg-white/70 dark:bg-[#1c1c1e]/70 backdrop-blur-3xl border border-black/[0.04] dark:border-white/[0.05] rounded-[2.5rem] p-7 lg:p-10 shadow-[0_8px_40px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_40px_rgb(0,0,0,0.2)] transition-all">
-              <div className="flex items-center justify-between gap-4 mb-8">
-                <h2 className="text-[19px] font-semibold tracking-tight text-black dark:text-white flex items-center gap-2.5">
-                  <svg className="w-5 h-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <section className="mb-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  历史快照穿越
+                  Snapshot History
                 </h2>
                 {snapshotLoading && (
-                  <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-black/[0.03] dark:bg-white/[0.05] rounded-full backdrop-blur-md">
-                    <div className="w-3.5 h-3.5 border-2 border-black/20 dark:border-white/20 border-t-black dark:border-t-white rounded-full animate-spin"></div>
-                    <span className="text-[13px] font-medium text-gray-600 dark:text-gray-300 tracking-wide">加载中...</span>
+                  <div className="flex items-center gap-2 text-xs font-bold text-indigo-500">
+                    <div className="w-3 h-3 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+                    LOADING
                   </div>
                 )}
               </div>
 
-              {timelineError && (
-                <div className="p-4 bg-red-50 dark:bg-red-500/10 rounded-2xl mb-6 border border-red-100 dark:border-red-500/20">
-                  <p className="text-[14px] text-red-600 dark:text-red-400 font-medium">{timelineError}</p>
+              {timelineError ? (
+                <div className="p-4 bg-red-50 dark:bg-red-500/10 rounded-xl text-red-600 text-xs font-bold border border-red-100 dark:border-red-500/20">
+                  {timelineError}
                 </div>
-              )}
-
-              {!timelineError && timelineItems.length === 0 && (
-                <div className="py-12 text-center bg-black/[0.02] dark:bg-white/[0.02] rounded-3xl border border-black/[0.02] dark:border-white/[0.02]">
-                  <p className="text-[15px] font-medium text-gray-500 dark:text-gray-400">
-                    {timelineLoading ? '正在检索历史线索...' : '暂无历史快照记录'}
-                  </p>
+              ) : timelineItems.length === 0 ? (
+                <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-bold text-slate-400">NO HISTORY FOUND</p>
                 </div>
-              )}
-
-              {timelineItems.length > 0 && (
+              ) : (
                 <>
-                  <div className="grid gap-3.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                     {timelineItems.map((item) => {
                       const active = toSnapshotKey(item.snapshotAt) === selectedSnapshotKey;
                       const formattedDate = formatDateParts(item.snapshotAt);
@@ -420,49 +418,43 @@ export default function Home() {
                           key={item.snapshotAt}
                           onClick={() => void handleSelectSnapshot(item.snapshotAt)}
                           disabled={snapshotLoading}
-                          className={`text-left rounded-2xl px-4 py-3.5 transition-all duration-300 flex flex-col gap-1.5 group ${
+                          className={`text-left rounded-xl p-3 transition-all border ${
                             active
-                              ? 'bg-black text-white dark:bg-white dark:text-black shadow-lg scale-100 ring-1 ring-black/5 dark:ring-white/5'
-                              : 'bg-white/80 dark:bg-[#2c2c2e]/80 text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-[#3a3a3c] shadow-sm hover:shadow-md border border-black/[0.03] dark:border-white/[0.04]'
-                          } ${snapshotLoading && !active ? 'opacity-50 cursor-not-allowed grayscale-[0.3]' : ''}`}
+                              ? 'bg-slate-900 border-slate-900 dark:bg-white dark:border-white shadow-lg shadow-slate-200 dark:shadow-none'
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                          } ${snapshotLoading && !active ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                          <p className={`text-[14px] font-semibold tracking-wide transition-colors ${active ? 'text-white dark:text-black' : 'text-gray-900 dark:text-white group-hover:text-black dark:group-hover:text-white'}`}>
-                            {formattedDate.datePart} <br />
-                            <span className="text-[12px] opacity-80 font-medium">{formattedDate.timePart}</span>
-                          </p>
-                          <p className={`text-[12px] font-medium mt-1 ${active ? 'text-white/70 dark:text-black/70' : 'text-gray-500 dark:text-gray-400'}`}>
-                            {item.count} 条记录
-                          </p>
+                          <div className={`text-[12px] font-black leading-tight ${active ? 'text-white dark:text-slate-900' : 'text-slate-900 dark:text-white'}`}>
+                            {formattedDate.datePart}
+                            <div className={`text-[10px] mt-0.5 opacity-60 font-bold`}>{formattedDate.timePart}</div>
+                          </div>
+                          <div className={`text-[10px] font-bold mt-2 ${active ? 'text-indigo-400 dark:text-indigo-600' : 'text-slate-400'}`}>
+                            {item.count} ENTRIES
+                          </div>
                         </button>
                       );
                     })}
                   </div>
 
                   {timelinePagination && timelinePagination.totalPages > 1 && (
-                    <div className="mt-8 flex items-center justify-between border-t border-black/[0.04] dark:border-white/[0.05] pt-6">
-                      <p className="text-[13px] font-medium text-gray-400 dark:text-gray-500 tracking-wide bg-black/[0.03] dark:bg-white/[0.05] px-3 py-1.5 rounded-full">
-                        第 {timelinePagination.page} 页，共 {Math.max(timelinePagination.totalPages, 1)} 页
+                    <div className="mt-6 flex items-center justify-between pt-6 border-t border-slate-100 dark:border-slate-800">
+                      <p className="text-[10px] font-black text-slate-400 uppercase">
+                        Page {timelinePagination.page} of {timelinePagination.totalPages}
                       </p>
-                      <div className="flex gap-2.5">
+                      <div className="flex gap-2">
                         <button
                           onClick={() => void handleTimelinePageChange(timelinePagination.page - 1)}
                           disabled={!timelinePagination.hasPrev || timelineLoading}
-                          className="w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-[#2c2c2e] shadow-sm border border-black/[0.04] dark:border-white/[0.05] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#3a3a3c] hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-sm transition-all"
-                          aria-label="Previous page"
+                          className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
                         >
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-                          </svg>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
                         </button>
                         <button
                           onClick={() => void handleTimelinePageChange(timelinePagination.page + 1)}
                           disabled={!timelinePagination.hasNext || timelineLoading}
-                          className="w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-[#2c2c2e] shadow-sm border border-black/[0.04] dark:border-white/[0.05] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#3a3a3c] hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-sm transition-all"
-                          aria-label="Next page"
+                          className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
                         >
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-                          </svg>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
                         </button>
                       </div>
                     </div>
@@ -476,20 +468,18 @@ export default function Home() {
               onPlatformChange={setActivePlatform}
             />
 
-            <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
+            <div className="mt-8">
               {renderContent()}
             </div>
           </>
         )}
+      </main>
 
-        <footer className="mt-24 text-center">
-          <p className="text-[13px] font-medium tracking-wider text-gray-400 dark:text-gray-500 uppercase flex items-center justify-center gap-2">
-            <span>Powered by Next.js</span>
-            <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-700"></span>
-            <span>Data from open sources</span>
-          </p>
-        </footer>
-      </div>
+      <footer className="max-w-[1440px] mx-auto px-6 pt-12 text-center">
+        <p className="text-[10px] font-black tracking-[0.2em] text-slate-400 uppercase">
+          TrendPulse Data Intelligence Engine © 2026
+        </p>
+      </footer>
     </div>
   );
 }

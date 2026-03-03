@@ -8,80 +8,87 @@ interface PublishJobListProps {
   onRetry: (jobId: string, allowReview: boolean) => void;
 }
 
-function statusClass(status: PublishJobItem['status']) {
+function statusDot(status: PublishJobItem['status']) {
   switch (status) {
-    case 'SUCCESS':
-      return 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200';
-    case 'FAILED':
-      return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200';
-    case 'REVIEW':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200';
-    case 'RUNNING':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200';
-    default:
-      return 'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300';
+    case 'SUCCESS': return 'bg-emerald-500';
+    case 'FAILED': return 'bg-red-500';
+    case 'REVIEW': return 'bg-amber-500';
+    case 'RUNNING': return 'bg-indigo-500 animate-pulse';
+    default: return 'bg-slate-300';
+  }
+}
+
+function statusText(status: PublishJobItem['status']) {
+  switch (status) {
+    case 'SUCCESS': return 'text-emerald-600 dark:text-emerald-400';
+    case 'FAILED': return 'text-red-600 dark:text-red-400';
+    case 'REVIEW': return 'text-amber-600 dark:text-amber-400';
+    case 'RUNNING': return 'text-indigo-600 dark:text-indigo-400';
+    default: return 'text-slate-400';
   }
 }
 
 export default function PublishJobList({ jobs, retryingJobId, onRetry }: PublishJobListProps) {
   if (jobs.length === 0) {
     return (
-      <div className="rounded-3xl border border-black/[0.05] bg-white/70 p-5 text-sm text-gray-500 dark:border-white/[0.08] dark:bg-[#1c1c1e]/70 dark:text-gray-400">
-        暂无发布任务记录。
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 text-center">
+        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No publishing logs</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-3xl border border-black/[0.05] bg-white/70 p-4 dark:border-white/[0.08] dark:bg-[#1c1c1e]/70">
-      <h3 className="mb-3 text-base font-semibold text-black dark:text-white">发布任务</h3>
-      <div className="space-y-3">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+      <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Dispatch Status</h3>
+      </div>
+      <div className="divide-y divide-slate-50 dark:divide-slate-800/50">
         {jobs.map((job) => {
           const isRetrying = retryingJobId === job.id;
-          const canRetry = job.status === 'FAILED';
-          const canForceRetry = job.status === 'REVIEW';
-
           return (
-            <div
-              key={job.id}
-              className="rounded-2xl border border-black/[0.06] bg-white/80 p-4 dark:border-white/[0.08] dark:bg-[#2a2a2d]/80"
-            >
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(job.status)}`}>
-                  {job.status}
+            <div key={job.id} className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full ${statusDot(job.status)}`}></div>
+                  <span className={`text-[10px] font-black uppercase tracking-tight ${statusText(job.status)}`}>
+                    {job.status}
+                  </span>
+                </div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                  {job.deliveryStage === 'draftbox' ? 'DRAFT' : 'LIVE'}
                 </span>
-                <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-white/[0.08] dark:text-gray-300">
-                  {job.deliveryStage === 'draftbox' ? '草稿箱' : '已发布'}
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">尝试 {job.attempt}</span>
               </div>
 
-              <div className="space-y-1 text-xs text-gray-600 dark:text-gray-300">
-                <p>任务ID: {job.id}</p>
-                {job.externalId && <p>外部ID: {job.externalId}</p>}
-                {job.errorMessage && <p className="text-red-500 dark:text-red-400">错误: {job.errorMessage}</p>}
+              <div className="space-y-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tighter">
+                <div className="flex justify-between">
+                  <span>ID: {job.id.slice(0, 8)}...</span>
+                  <span>ATTEMPT: {job.attempt}</span>
+                </div>
+                {job.errorMessage && (
+                  <p className="text-red-500 dark:text-red-400 normal-case italic font-medium leading-relaxed">
+                    Error: {job.errorMessage}
+                  </p>
+                )}
               </div>
 
-              {(canRetry || canForceRetry) && (
-                <div className="mt-3 flex gap-2">
-                  {canRetry && (
+              {(job.status === 'FAILED' || job.status === 'REVIEW') && (
+                <div className="flex gap-2 pt-1">
+                  {job.status === 'FAILED' && (
                     <button
-                      type="button"
                       onClick={() => onRetry(job.id, false)}
                       disabled={isRetrying}
-                      className="rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-white dark:hover:bg-white/[0.06]"
+                      className="text-[9px] font-black text-indigo-600 hover:underline uppercase"
                     >
-                      {isRetrying ? '重试中...' : '重试'}
+                      {isRetrying ? 'RETRYING...' : 'RETRY NOW'}
                     </button>
                   )}
-                  {canForceRetry && (
+                  {job.status === 'REVIEW' && (
                     <button
-                      type="button"
                       onClick={() => onRetry(job.id, true)}
                       disabled={isRetrying}
-                      className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200"
+                      className="text-[9px] font-black text-amber-600 hover:underline uppercase"
                     >
-                      {isRetrying ? '处理中...' : '复核后重试'}
+                      {isRetrying ? 'RETRYING...' : 'FORCE RETRY'}
                     </button>
                   )}
                 </div>

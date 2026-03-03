@@ -9,37 +9,41 @@ interface PlatformTabsProps {
 
 export default function PlatformTabs({ activePlatform, onPlatformChange }: PlatformTabsProps) {
   return (
-    <div className="flex justify-center mb-8">
-      <div className="flex flex-wrap items-center justify-center gap-1 p-1.5 bg-black/[0.03] dark:bg-white/[0.05] rounded-[2rem] backdrop-blur-xl border border-black/[0.02] dark:border-white/[0.02] shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
+    <div className="flex justify-center mb-10 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="inline-flex items-center p-1 bg-slate-100 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <button
           onClick={() => onPlatformChange('all')}
-          className={`px-5 py-2.5 rounded-full text-[14px] font-medium transition-all duration-300 ${
+          className={`px-5 py-2 text-[13px] font-bold rounded-lg transition-all duration-200 ${
             activePlatform === 'all'
-              ? 'bg-white text-black shadow-sm dark:bg-[#1c1c1e] dark:text-white dark:shadow-[0_1px_2px_rgba(0,0,0,0.5)] border border-black/[0.04] dark:border-white/[0.04] scale-100'
-              : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] scale-[0.98]'
+              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400 border border-slate-200 dark:border-slate-600'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
           }`}
         >
-          全部平台
+          ALL SOURCES
         </button>
-        {PLATFORMS.map((platform) => {
-          const config = PLATFORM_CONFIGS[platform];
-          return (
-            <button
-              key={platform}
-              onClick={() => onPlatformChange(platform)}
-              className={`px-5 py-2.5 rounded-full text-[14px] font-medium transition-all duration-300 flex items-center gap-2 ${
-                activePlatform === platform
-                  ? 'bg-white text-black shadow-sm dark:bg-[#1c1c1e] dark:text-white dark:shadow-[0_1px_2px_rgba(0,0,0,0.5)] border border-black/[0.04] dark:border-white/[0.04] scale-100'
-                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] scale-[0.98]'
-              }`}
-            >
-              <span className={`text-[15px] transition-opacity ${activePlatform === platform ? 'opacity-100' : 'opacity-70'}`}>
-                {config.icon}
-              </span>
-              <span>{config.name}</span>
-            </button>
-          );
-        })}
+        <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+        <div className="flex gap-1">
+          {PLATFORMS.map((platform) => {
+            const config = PLATFORM_CONFIGS[platform];
+            const isActive = activePlatform === platform;
+            return (
+              <button
+                key={platform}
+                onClick={() => onPlatformChange(platform)}
+                className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 flex items-center gap-2 ${
+                  isActive
+                    ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400 border border-slate-200 dark:border-slate-600'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                }`}
+              >
+                <span className={`text-[14px] ${isActive ? 'grayscale-0' : 'grayscale opacity-60'}`}>
+                  {config.icon}
+                </span>
+                <span className="whitespace-nowrap uppercase">{config.name}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
