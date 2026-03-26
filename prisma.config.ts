@@ -10,13 +10,15 @@ import path from 'path';
 
 function resolveDatabaseUrl() {
   const rawConnectionString =
+    process.env.TREND_API_POSTGRES_URL_NON_POOLING ||
+    process.env.POSTGRES_URL_NON_POOLING ||
     process.env.TREND_API_POSTGRES_URL ||
     process.env.POSTGRES_URL ||
     process.env.DATABASE_URL;
 
   if (!rawConnectionString) {
     throw new Error(
-      'Database URL is not configured. Set TREND_API_POSTGRES_URL, POSTGRES_URL, or DATABASE_URL.'
+      'Database URL is not configured. Set TREND_API_POSTGRES_URL_NON_POOLING, POSTGRES_URL_NON_POOLING, TREND_API_POSTGRES_URL, POSTGRES_URL, or DATABASE_URL.'
     );
   }
 
@@ -41,7 +43,7 @@ export default defineConfig({
     path: path.join(__dirname, 'prisma/migrations'),
   },
   datasource: {
-    // Vercel Supabase 使用 Session Pooler (端口 6543)，比直连更稳定
+    // Prisma CLI 优先使用 non-pooling 直连，避免 migrate/status 走 pgbouncer。
     url: resolveDatabaseUrl(),
   },
 });
