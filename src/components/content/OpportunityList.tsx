@@ -46,7 +46,7 @@ export default function OpportunityList({
     return (
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center">
         <div className="inline-block w-6 h-6 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-3"></div>
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scanning Opportunities...</p>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">正在分析创作机会...</p>
       </div>
     );
   }
@@ -54,7 +54,7 @@ export default function OpportunityList({
   if (opportunities.length === 0) {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center border-dashed">
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No candidates found</p>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">暂未发现匹配机会</p>
       </div>
     );
   }
@@ -62,7 +62,7 @@ export default function OpportunityList({
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
       <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-        <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.1em]">Qualified Opportunities</h3>
+        <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.1em]">待选创作机会</h3>
       </div>
       <div className="p-2 space-y-1">
         {opportunities.map((opportunity) => {
@@ -86,7 +86,7 @@ export default function OpportunityList({
                   <div className="flex items-center gap-2">
                     <span className={statusTag(opportunity.status)}>{opportunity.status}</span>
                     <span className="text-[10px] font-black text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded uppercase">
-                      SCORE: {Math.round(opportunity.score)}
+                      推荐分: {Math.round(opportunity.score)}
                     </span>
                   </div>
                   <span className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-tighter">
@@ -98,14 +98,14 @@ export default function OpportunityList({
                 </h4>
                 <div className="flex items-center gap-4 text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-4">
                   <div className="flex items-center gap-1">
-                    <span className="text-slate-300">RES:</span>
+                    <span className="text-slate-300">热榜共振:</span>
                     <span className="text-slate-600 dark:text-slate-400">{opportunity.topicCluster.resonanceCount}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="text-slate-300">GROWTH:</span>
+                    <span className="text-slate-300">爆发系数:</span>
                     <span className="text-slate-600 dark:text-slate-400">+{opportunity.topicCluster.growthScore.toFixed(1)}</span>
                   </div>
-                  <div className="ml-auto text-slate-300">{formatDate(opportunity.expiresAt)}</div>
+                  <div className="ml-auto text-slate-300">{formatDate(opportunity.expiresAt)} 过期</div>
                 </div>
               </button>
 
@@ -119,7 +119,7 @@ export default function OpportunityList({
                     : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-lg shadow-slate-900/10 dark:shadow-none'
                 }`}
               >
-                {isGenerating ? 'Synthesizing...' : 'Generate AI Draft'}
+                {isGenerating ? 'AI 正在深度写作...' : '一键生成稿件'}
               </button>
             </div>
           );

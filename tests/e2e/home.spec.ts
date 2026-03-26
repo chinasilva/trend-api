@@ -5,6 +5,6 @@ test('home page responds with app shell', async ({ request }) => {
   expect(response.ok()).toBeTruthy();
 
   const html = await response.text();
-  expect(html).toContain('加载数据中');
+  expect(html).toContain('Syncing Trends...');
   expect(html).toContain('min-h-screen');
 });

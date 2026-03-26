@@ -37,7 +37,7 @@ export default function TrendList({ trends, platform }: TrendListProps) {
         <span className="font-bold text-slate-900 dark:text-slate-100 tracking-tight text-base leading-none">{config.name}</span>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-sm uppercase">
-            TRENDS
+            实时榜单
           </span>
         </div>
       </div>

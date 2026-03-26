@@ -12,6 +12,13 @@ import { PLATFORMS, type Platform } from '@/types/trend';
 
 export const dynamic = 'force-dynamic';
 const GENERIC_FETCH_ERROR_MESSAGE = 'Failed to load trends. Please retry later.';
+const DEFAULT_FALLBACK_PLATFORMS: Platform[] = ['weibo', 'weixin', 'weixinarticle'];
+const FALLBACK_CACHE_TTL_MS = 60 * 1000;
+
+const fallbackCache = new Map<string, {
+  timestamp: number;
+  data: Record<Platform, unknown[]>;
+}>();
 
 function errorResponse(status: number, errorCode: string, message: string) {
   return NextResponse.json(
@@ -42,12 +49,80 @@ function parsePlatform(platform: string | null): Platform | null {
   return platform as Platform;
 }
 
+function shouldIncludeRichFields(searchParams: URLSearchParams) {
+  return searchParams.get('view') === 'full';
+}
+
+function getAllowedFallbackPlatforms() {
+  const raw = process.env.TRENDS_DB_FALLBACK_PLATFORMS;
+  if (!raw || !raw.trim()) {
+    return DEFAULT_FALLBACK_PLATFORMS;
+  }
+
+  const allowed = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item): item is Platform => PLATFORMS.includes(item as Platform));
+
+  return allowed.length > 0 ? allowed : DEFAULT_FALLBACK_PLATFORMS;
+}
+
+function buildFallbackCacheKey(platforms: Platform[], includeRichFields: boolean) {
+  return `${includeRichFields ? 'full' : 'slim'}:${platforms.slice().sort().join(',')}`;
+}
+
+function getCachedFallbackData(key: string) {
+  const cached = fallbackCache.get(key);
+  if (!cached) {
+    return null;
+  }
+
+  if (Date.now() - cached.timestamp > FALLBACK_CACHE_TTL_MS) {
+    fallbackCache.delete(key);
+    return null;
+  }
+
+  return cached.data;
+}
+
+function setCachedFallbackData(key: string, data: Record<Platform, unknown[]>) {
+  fallbackCache.set(key, {
+    timestamp: Date.now(),
+    data,
+  });
+}
+
+async function loadDatabaseFallback(
+  platforms: Platform[],
+  includeRichFields: boolean
+) {
+  const cacheKey = buildFallbackCacheKey(platforms, includeRichFields);
+  const cached = getCachedFallbackData(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const fallbackTrends = await getTrendsFromDB(platforms, { includeRichFields });
+  const fallbackData = formatTrendsForAPI(fallbackTrends, {
+    includeRichFields,
+  }) as Record<Platform, unknown[]>;
+  setCachedFallbackData(cacheKey, fallbackData);
+  return fallbackData;
+}
+
+function applyFallbackResponseHeaders(response: NextResponse) {
+  response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=240');
+  return response;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get('date');
     const snapshotAtParam = searchParams.get('snapshotAt');
     const platform = parsePlatform(searchParams.get('platform'));
+    const includeRichFields = shouldIncludeRichFields(searchParams);
+    const allowedFallbackPlatforms = new Set(getAllowedFallbackPlatforms());
 
     let data: Record<Platform, unknown[]>;
     let snapshotAt: string | null;
@@ -67,7 +142,11 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const snapshotResult = await getTrendsBySnapshotAt(parsedSnapshotAt, platform || undefined);
+      const snapshotResult = await getTrendsBySnapshotAt(
+        parsedSnapshotAt,
+        platform || undefined,
+        { includeRichFields }
+      );
       data = snapshotResult.trends as Record<Platform, unknown[]>;
       snapshotAt = snapshotResult.snapshotAt;
       source = 'timeline';
@@ -84,11 +163,11 @@ export async function GET(request: NextRequest) {
 
       // 查询指定日期的数据
       if (platform) {
-        const trends = await getTrendsByDateFromDb(platform, date);
+        const trends = await getTrendsByDateFromDb(platform, date, { includeRichFields });
         data = { [platform]: trends } as Record<Platform, unknown[]>;
         snapshotAt = date.toISOString();
       } else {
-        const result = await getAllTrendsByDate(date);
+        const result = await getAllTrendsByDate(date, { includeRichFields });
         data = result.trends as Record<Platform, unknown[]>;
         snapshotAt = result.snapshotAt;
       }
@@ -99,7 +178,7 @@ export async function GET(request: NextRequest) {
       let hasSnapshotReadError = false;
 
       try {
-        snapshotResult = await getLatestSnapshot(platform || undefined);
+        snapshotResult = await getLatestSnapshot(platform || undefined, { includeRichFields });
       } catch (error) {
         hasSnapshotReadError = true;
         console.error('[GET /api/trends] failed to read snapshots:', error);
@@ -113,12 +192,18 @@ export async function GET(request: NextRequest) {
         // 快照通常是按批次写入，若某些平台当次同步失败，尝试用 Trend 表兜底补齐缺失平台。
         if (!platform) {
           const missingPlatforms = PLATFORMS.filter((p) => (data[p]?.length ?? 0) === 0);
-          if (missingPlatforms.length > 0) {
-            const fallbackTrends = await getTrendsFromDB();
-            const fallbackData = formatTrendsForAPI(fallbackTrends) as Record<Platform, unknown[]>;
+          const eligibleFallbackPlatforms = missingPlatforms.filter((item) =>
+            allowedFallbackPlatforms.has(item)
+          );
+
+          if (eligibleFallbackPlatforms.length > 0) {
+            const fallbackData = await loadDatabaseFallback(
+              eligibleFallbackPlatforms,
+              includeRichFields
+            );
             let filledCount = 0;
 
-            for (const p of missingPlatforms) {
+            for (const p of eligibleFallbackPlatforms) {
               if ((fallbackData[p]?.length ?? 0) > 0) {
                 data[p] = fallbackData[p];
                 filledCount += 1;
@@ -132,8 +217,8 @@ export async function GET(request: NextRequest) {
         }
       } else {
         // 降级到旧的 Trend 表
-        const trends = await getTrendsFromDB(platform || undefined);
-        data = formatTrendsForAPI(trends);
+        const trends = await getTrendsFromDB(platform || undefined, { includeRichFields });
+        data = formatTrendsForAPI(trends, { includeRichFields });
         snapshotAt = trends.length > 0
           ? trends.reduce((latest, t) =>
               t.updatedAt > latest ? t.updatedAt : latest,
@@ -147,7 +232,7 @@ export async function GET(request: NextRequest) {
     // 检查是否有数据
     const hasData = PLATFORMS.some(p => data[p]?.length > 0);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data,
       snapshotAt,
@@ -155,6 +240,12 @@ export async function GET(request: NextRequest) {
       source,
       hasData,
     });
+
+    if (source === 'snapshot+database' || source === 'database' || source === 'database-fallback') {
+      return applyFallbackResponseHeaders(response);
+    }
+
+    return response;
   } catch (error) {
     console.error('[GET /api/trends] failed:', error);
     try {
