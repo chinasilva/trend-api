@@ -429,7 +429,7 @@ export default function Home() {
                             <div className={`text-[10px] mt-0.5 opacity-60 font-bold`}>{formattedDate.timePart}</div>
                           </div>
                           <div className={`text-[10px] font-bold mt-2 ${active ? 'text-indigo-400 dark:text-indigo-600' : 'text-slate-400'}`}>
-                            {item.count} 条记录
+                            {item.count} 条采集记录
                           </div>
                         </button>
                       );
