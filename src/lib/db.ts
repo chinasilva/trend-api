@@ -22,6 +22,68 @@ export interface TimelinePagination {
   hasNext: boolean;
 }
 
+interface TrendReadOptions {
+  includeRichFields?: boolean;
+}
+
+const trendApiBaseSelect = {
+  title: true,
+  hotValue: true,
+  url: true,
+  description: true,
+  rank: true,
+  updatedAt: true,
+  source: {
+    select: {
+      platform: true,
+    },
+  },
+} satisfies Prisma.TrendSelect;
+
+const trendApiRichSelect = {
+  ...trendApiBaseSelect,
+  thumbnail: true,
+  extra: true,
+} satisfies Prisma.TrendSelect;
+
+const snapshotApiBaseSelect = {
+  rank: true,
+  hotValue: true,
+  createdAt: true,
+  content: {
+    select: {
+      title: true,
+      url: true,
+      description: true,
+      source: {
+        select: {
+          platform: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.SnapshotSelect;
+
+const snapshotApiRichSelect = {
+  rank: true,
+  hotValue: true,
+  createdAt: true,
+  content: {
+    select: {
+      title: true,
+      url: true,
+      description: true,
+      thumbnail: true,
+      extra: true,
+      source: {
+        select: {
+          platform: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.SnapshotSelect;
+
 function resolveSnapshotDedupWindowMinutes() {
   const raw = Number(
     process.env.SNAPSHOT_DEDUP_WINDOW_MINUTES ?? SNAPSHOT_DEDUP_WINDOW_DEFAULT_MINUTES
@@ -79,6 +141,88 @@ function createPrismaClient() {
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+function buildTrendSelect(includeRichFields = false) {
+  return includeRichFields ? trendApiRichSelect : trendApiBaseSelect;
+}
+
+function buildSnapshotSelect(includeRichFields = false) {
+  return includeRichFields ? snapshotApiRichSelect : snapshotApiBaseSelect;
+}
+
+function toTrendItem(
+  record: {
+    title: string;
+    hotValue: number | null;
+    url: string | null;
+    description: string | null;
+    rank: number;
+    thumbnail?: string | null;
+    extra?: Prisma.JsonValue | null;
+  },
+  includeRichFields = false
+) {
+  return {
+    title: record.title,
+    hotValue: record.hotValue ?? undefined,
+    url: record.url || undefined,
+    description: record.description ?? undefined,
+    rank: record.rank,
+    ...(includeRichFields
+      ? {
+          thumbnail: record.thumbnail ?? undefined,
+          extra: record.extra as Record<string, unknown> | undefined,
+        }
+      : {}),
+  } satisfies TrendItem;
+}
+
+function readSnapshotRichFields(content: object) {
+  const rich = content as {
+    thumbnail?: string | null;
+    extra?: Prisma.JsonValue | null;
+  };
+
+  return {
+    thumbnail: rich.thumbnail ?? null,
+    extra: rich.extra ?? null,
+  };
+}
+
+async function getLatestTrendBatchTargets(platforms?: Platform[]) {
+  const platformFilter =
+    platforms && platforms.length > 0
+      ? Prisma.sql`WHERE ts.platform IN (${Prisma.join(platforms)})`
+      : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<Array<{ platform: string; latest_updated_at: Date | string }>>(
+    Prisma.sql`
+      SELECT ts.platform, MAX(t."updatedAt") AS latest_updated_at
+      FROM "Trend" t
+      JOIN "TrendSource" ts ON ts.id = t."sourceId"
+      ${platformFilter}
+      GROUP BY ts.platform
+    `
+  );
+
+  return rows
+    .map((row) => {
+      const latestUpdatedAt =
+        row.latest_updated_at instanceof Date
+          ? row.latest_updated_at
+          : new Date(row.latest_updated_at);
+      if (Number.isNaN(latestUpdatedAt.getTime())) {
+        return null;
+      }
+      return {
+        platform: row.platform as Platform,
+        latestUpdatedAt,
+      };
+    })
+    .filter(
+      (row): row is { platform: Platform; latestUpdatedAt: Date } => row !== null
+    );
+}
 
 // 确保 TrendSource 存在
 export async function ensureTrendSources() {
@@ -168,23 +312,46 @@ export async function saveTrends(platform: Platform, trends: TrendItem[]) {
   return { successCount, failCount };
 }
 
-// 获取数据库中的热榜数据
-export async function getTrendsFromDB(platform?: Platform) {
-  const where = platform ? { source: { platform } } : {};
+// 获取数据库中的最近一批热榜数据
+export async function getTrendsFromDB(
+  platformOrPlatforms?: Platform | Platform[],
+  options: TrendReadOptions = {}
+) {
+  const includeRichFields = options.includeRichFields === true;
+  const platforms = Array.isArray(platformOrPlatforms)
+    ? platformOrPlatforms
+    : platformOrPlatforms
+    ? [platformOrPlatforms]
+    : undefined;
 
-  const trends = await prisma.trend.findMany({
+  const latestTargets = await getLatestTrendBatchTargets(platforms);
+  if (latestTargets.length === 0) {
+    return [];
+  }
+
+  const where = {
+    OR: latestTargets.map((target) => ({
+      source: { platform: target.platform },
+      updatedAt: {
+        gte: new Date(target.latestUpdatedAt.getTime() - SNAPSHOT_TOLERANCE_MS),
+        lte: new Date(target.latestUpdatedAt.getTime() + SNAPSHOT_TOLERANCE_MS),
+      },
+    })),
+  } satisfies Prisma.TrendWhereInput;
+
+  return prisma.trend.findMany({
     where,
-    include: {
-      source: true,
-    },
+    select: buildTrendSelect(includeRichFields),
     orderBy: [{ source: { platform: 'asc' } }, { rank: 'asc' }],
   });
-
-  return trends;
 }
 
 // 将数据库数据格式化为 API 响应格式
-export function formatTrendsForAPI(trends: Awaited<ReturnType<typeof getTrendsFromDB>>) {
+export function formatTrendsForAPI(
+  trends: Awaited<ReturnType<typeof getTrendsFromDB>>,
+  options: TrendReadOptions = {}
+) {
+  const includeRichFields = options.includeRichFields === true;
   const result: Record<Platform, TrendItem[]> = {} as Record<Platform, TrendItem[]>;
 
   for (const trend of trends) {
@@ -193,15 +360,7 @@ export function formatTrendsForAPI(trends: Awaited<ReturnType<typeof getTrendsFr
       result[platform] = [];
     }
 
-    result[platform].push({
-      title: trend.title,
-      hotValue: trend.hotValue ?? undefined,
-      url: trend.url || undefined,
-      description: trend.description ?? undefined,
-      rank: trend.rank,
-      thumbnail: trend.thumbnail ?? undefined,
-      extra: trend.extra as Record<string, unknown> | undefined,
-    });
+    result[platform].push(toTrendItem(trend, includeRichFields));
   }
 
   return result;
@@ -327,7 +486,12 @@ export async function saveSnapshot(platform: Platform, trends: TrendItem[], snap
 }
 
 // 按日期查询快照
-export async function getTrendsByDate(platform: Platform, date: Date) {
+export async function getTrendsByDate(
+  platform: Platform,
+  date: Date,
+  options: TrendReadOptions = {}
+) {
+  const includeRichFields = options.includeRichFields === true;
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -345,38 +509,38 @@ export async function getTrendsByDate(platform: Platform, date: Date) {
         source: { platform },
       },
     },
-    include: {
-      content: true,
-    },
+    select: buildSnapshotSelect(includeRichFields),
     orderBy: { rank: 'asc' },
   });
 
-  return snapshots.map((s) => ({
-    title: s.content.title,
-    hotValue: s.hotValue ?? undefined,
-    url: s.content.url || undefined,
-    description: s.content.description ?? undefined,
-    rank: s.rank,
-    thumbnail: s.content.thumbnail ?? undefined,
-    extra: s.content.extra as Record<string, unknown> | undefined,
-  }));
+  return snapshots.map((s) =>
+    toTrendItem(
+      {
+        ...readSnapshotRichFields(s.content),
+        title: s.content.title,
+        hotValue: s.hotValue,
+        url: s.content.url,
+        description: s.content.description,
+        rank: s.rank,
+      },
+      includeRichFields
+    )
+  );
 }
 
 // 获取最新的快照
-export async function getLatestSnapshot(platform?: Platform) {
+export async function getLatestSnapshot(
+  platform?: Platform,
+  options: TrendReadOptions = {}
+) {
+  const includeRichFields = options.includeRichFields === true;
   const where = platform ? { content: { source: { platform } } } : {};
 
   // 找到最新的快照时间
   const latestSnapshot = await prisma.snapshot.findFirst({
     where,
     orderBy: { createdAt: 'desc' },
-    include: {
-      content: {
-        include: {
-          source: true,
-        },
-      },
-    },
+    select: buildSnapshotSelect(includeRichFields),
   });
 
   if (!latestSnapshot) {
@@ -394,13 +558,7 @@ export async function getLatestSnapshot(platform?: Platform) {
       },
       ...where,
     },
-    include: {
-      content: {
-        include: {
-          source: true,
-        },
-      },
-    },
+    select: buildSnapshotSelect(includeRichFields),
     orderBy: [{ content: { source: { platform: 'asc' } } }, { rank: 'asc' }],
   });
 
@@ -413,22 +571,31 @@ export async function getLatestSnapshot(platform?: Platform) {
       result[p] = [];
     }
 
-    result[p].push({
-      title: s.content.title,
-      hotValue: s.hotValue ?? undefined,
-      url: s.content.url || undefined,
-      description: s.content.description ?? undefined,
-      rank: s.rank,
-      thumbnail: s.content.thumbnail ?? undefined,
-      extra: s.content.extra as Record<string, unknown> | undefined,
-    });
+    result[p].push(
+      toTrendItem(
+        {
+          ...readSnapshotRichFields(s.content),
+          title: s.content.title,
+          hotValue: s.hotValue,
+          url: s.content.url,
+          description: s.content.description,
+          rank: s.rank,
+        },
+        includeRichFields
+      )
+    );
   }
 
   return { trends: result, snapshotAt: snapshotAt.toISOString() };
 }
 
 // 按快照时间点查询（用于时间线选择）
-export async function getTrendsBySnapshotAt(snapshotTime: Date, platform?: Platform) {
+export async function getTrendsBySnapshotAt(
+  snapshotTime: Date,
+  platform?: Platform,
+  options: TrendReadOptions = {}
+) {
+  const includeRichFields = options.includeRichFields === true;
   const where = platform ? { content: { source: { platform } } } : {};
 
   // 优先按精确时间点命中（对应 timeline 返回的 snapshotAt）。
@@ -468,13 +635,7 @@ export async function getTrendsBySnapshotAt(snapshotTime: Date, platform?: Platf
       createdAt: targetCreatedAt,
       ...where,
     },
-    include: {
-      content: {
-        include: {
-          source: true,
-        },
-      },
-    },
+    select: buildSnapshotSelect(includeRichFields),
     orderBy: [{ content: { source: { platform: 'asc' } } }, { rank: 'asc' }],
   });
 
@@ -484,15 +645,19 @@ export async function getTrendsBySnapshotAt(snapshotTime: Date, platform?: Platf
     if (!result[p]) {
       result[p] = [];
     }
-    result[p].push({
-      title: s.content.title,
-      hotValue: s.hotValue ?? undefined,
-      url: s.content.url || undefined,
-      description: s.content.description ?? undefined,
-      rank: s.rank,
-      thumbnail: s.content.thumbnail ?? undefined,
-      extra: s.content.extra as Record<string, unknown> | undefined,
-    });
+    result[p].push(
+      toTrendItem(
+        {
+          ...readSnapshotRichFields(s.content),
+          title: s.content.title,
+          hotValue: s.hotValue,
+          url: s.content.url,
+          description: s.content.description,
+          rank: s.rank,
+        },
+        includeRichFields
+      )
+    );
   }
 
   return { trends: result, snapshotAt: targetCreatedAt.toISOString() };
@@ -570,7 +735,8 @@ export async function getSnapshotTimeline(page = 1, pageSize = 20, platform?: Pl
 }
 
 // 按日期查询所有平台快照
-export async function getAllTrendsByDate(date: Date) {
+export async function getAllTrendsByDate(date: Date, options: TrendReadOptions = {}) {
+  const includeRichFields = options.includeRichFields === true;
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -602,13 +768,7 @@ export async function getAllTrendsByDate(date: Date) {
         lte: new Date(snapshotAt.getTime() + SNAPSHOT_TOLERANCE_MS),
       },
     },
-    include: {
-      content: {
-        include: {
-          source: true,
-        },
-      },
-    },
+    select: buildSnapshotSelect(includeRichFields),
     orderBy: [{ content: { source: { platform: 'asc' } } }, { rank: 'asc' }],
   });
 
@@ -621,15 +781,19 @@ export async function getAllTrendsByDate(date: Date) {
       result[p] = [];
     }
 
-    result[p].push({
-      title: s.content.title,
-      hotValue: s.hotValue ?? undefined,
-      url: s.content.url || undefined,
-      description: s.content.description ?? undefined,
-      rank: s.rank,
-      thumbnail: s.content.thumbnail ?? undefined,
-      extra: s.content.extra as Record<string, unknown> | undefined,
-    });
+    result[p].push(
+      toTrendItem(
+        {
+          ...readSnapshotRichFields(s.content),
+          title: s.content.title,
+          hotValue: s.hotValue,
+          url: s.content.url,
+          description: s.content.description,
+          rank: s.rank,
+        },
+        includeRichFields
+      )
+    );
   }
 
   return { trends: result, snapshotAt: snapshotAt.toISOString() };
