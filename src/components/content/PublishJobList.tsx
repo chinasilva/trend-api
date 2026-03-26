@@ -32,7 +32,7 @@ export default function PublishJobList({ jobs, retryingJobId, onRetry }: Publish
   if (jobs.length === 0) {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 text-center">
-        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No publishing logs</p>
+        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">暂无发布任务日志</p>
       </div>
     );
   }
@@ -40,7 +40,7 @@ export default function PublishJobList({ jobs, retryingJobId, onRetry }: Publish
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
       <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Dispatch Status</h3>
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">任务发布状态</h3>
       </div>
       <div className="divide-y divide-slate-50 dark:divide-slate-800/50">
         {jobs.map((job) => {
@@ -55,18 +55,18 @@ export default function PublishJobList({ jobs, retryingJobId, onRetry }: Publish
                   </span>
                 </div>
                 <span className="text-[9px] font-bold text-slate-400 uppercase bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                  {job.deliveryStage === 'draftbox' ? 'DRAFT' : 'LIVE'}
+                  {job.deliveryStage === 'draftbox' ? '同步草稿' : '正式发布'}
                 </span>
               </div>
 
               <div className="space-y-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tighter">
                 <div className="flex justify-between">
-                  <span>ID: {job.id.slice(0, 8)}...</span>
-                  <span>ATTEMPT: {job.attempt}</span>
+                  <span>任务: {job.id.slice(0, 8)}...</span>
+                  <span>尝试次数: {job.attempt}</span>
                 </div>
                 {job.errorMessage && (
                   <p className="text-red-500 dark:text-red-400 normal-case italic font-medium leading-relaxed">
-                    Error: {job.errorMessage}
+                    错误: {job.errorMessage}
                   </p>
                 )}
               </div>
@@ -79,7 +79,7 @@ export default function PublishJobList({ jobs, retryingJobId, onRetry }: Publish
                       disabled={isRetrying}
                       className="text-[9px] font-black text-indigo-600 hover:underline uppercase"
                     >
-                      {isRetrying ? 'RETRYING...' : 'RETRY NOW'}
+                      {isRetrying ? '重试中...' : '立即重试'}
                     </button>
                   )}
                   {job.status === 'REVIEW' && (
@@ -88,7 +88,7 @@ export default function PublishJobList({ jobs, retryingJobId, onRetry }: Publish
                       disabled={isRetrying}
                       className="text-[9px] font-black text-amber-600 hover:underline uppercase"
                     >
-                      {isRetrying ? 'RETRYING...' : 'FORCE RETRY'}
+                      {isRetrying ? '重试中...' : '人工核后重试'}
                     </button>
                   )}
                 </div>

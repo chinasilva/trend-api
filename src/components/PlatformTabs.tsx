@@ -19,7 +19,7 @@ export default function PlatformTabs({ activePlatform, onPlatformChange }: Platf
               : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
           }`}
         >
-          ALL SOURCES
+          全平台聚合
         </button>
         <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
         <div className="flex gap-1">

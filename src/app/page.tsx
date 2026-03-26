@@ -333,7 +333,7 @@ export default function Home() {
               </svg>
             </div>
             <span className="text-xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
-              TRENDPULSE
+              TrendPulse <span className="font-bold tracking-normal ml-1">趋势脉动</span>
             </span>
           </div>
 
@@ -346,7 +346,7 @@ export default function Home() {
                   : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
               }`}
             >
-              BROWSE
+              热榜浏览
             </button>
             <button
               onClick={() => setActiveMode('content')}
@@ -356,7 +356,7 @@ export default function Home() {
                   : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
               }`}
             >
-              ENGINE
+              生产引擎
             </button>
           </div>
         </div>
@@ -366,13 +366,13 @@ export default function Home() {
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
           <div>
             <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white mb-2">
-              Real-time Trend Engine
+              实时趋势情报系统
             </h1>
             <p className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-2 text-sm">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Last updated: {(trendsData?.snapshotAt || trendsData?.updatedAt)
+              最后更新于: {(trendsData?.snapshotAt || trendsData?.updatedAt)
                 ? formatDateParts(trendsData?.snapshotAt || trendsData?.updatedAt || '').fullLabel
-                : 'Searching...'}
+                : '检索中...'}
             </p>
           </div>
         </div>
@@ -389,12 +389,12 @@ export default function Home() {
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Snapshot History
+                  历史快照穿越
                 </h2>
                 {snapshotLoading && (
                   <div className="flex items-center gap-2 text-xs font-bold text-indigo-500">
                     <div className="w-3 h-3 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-                    LOADING
+                    载入中
                   </div>
                 )}
               </div>
@@ -405,7 +405,7 @@ export default function Home() {
                 </div>
               ) : timelineItems.length === 0 ? (
                 <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                  <p className="text-xs font-bold text-slate-400">NO HISTORY FOUND</p>
+                  <p className="text-xs font-bold text-slate-400">暂无历史记录</p>
                 </div>
               ) : (
                 <>
@@ -429,7 +429,7 @@ export default function Home() {
                             <div className={`text-[10px] mt-0.5 opacity-60 font-bold`}>{formattedDate.timePart}</div>
                           </div>
                           <div className={`text-[10px] font-bold mt-2 ${active ? 'text-indigo-400 dark:text-indigo-600' : 'text-slate-400'}`}>
-                            {item.count} ENTRIES
+                            {item.count} 条记录
                           </div>
                         </button>
                       );
@@ -439,7 +439,7 @@ export default function Home() {
                   {timelinePagination && timelinePagination.totalPages > 1 && (
                     <div className="mt-6 flex items-center justify-between pt-6 border-t border-slate-100 dark:border-slate-800">
                       <p className="text-[10px] font-black text-slate-400 uppercase">
-                        Page {timelinePagination.page} of {timelinePagination.totalPages}
+                        第 {timelinePagination.page} / {timelinePagination.totalPages} 页
                       </p>
                       <div className="flex gap-2">
                         <button
@@ -477,7 +477,7 @@ export default function Home() {
 
       <footer className="max-w-[1440px] mx-auto px-6 pt-12 text-center">
         <p className="text-[10px] font-black tracking-[0.2em] text-slate-400 uppercase">
-          TrendPulse Data Intelligence Engine © 2026
+          TrendPulse 趋势情报智能引擎 © 2026
         </p>
       </footer>
     </div>

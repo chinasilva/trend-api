@@ -178,7 +178,7 @@ export default function ContentPipelinePanel() {
     } catch (error) {
       setAuthUser(null);
       setApiSecret('');
-      setBanner({ type: 'error', text: 'Auth check failed.' });
+      setBanner({ type: 'error', text: '身份校验失败' });
     } finally {
       setAuthChecking(false);
     }
@@ -198,12 +198,19 @@ export default function ContentPipelinePanel() {
     try {
       const items = await listAccounts(apiSecret.trim());
       setAccounts(items);
-      if (!selectedAccountId && items.length > 0) setSelectedAccountId(items[0].id);
+      if (items.length > 0) {
+        const hasSelectedAccount = items.some((item) => item.id === selectedAccountId);
+        if (!selectedAccountId || !hasSelectedAccount) {
+          setSelectedAccountId(items[0].id);
+        }
+      } else {
+        setSelectedAccountId('');
+      }
       if (items.length === 0) {
-        setBanner({ type: 'info', text: 'No accounts available. Please set up account profile first.' });
+        setBanner({ type: 'info', text: '暂无可用账号，请先配置账号定位。' });
       }
     } catch (error) {
-      setBanner({ type: 'error', text: 'Failed to load accounts.' });
+      setBanner({ type: 'error', text: '加载账号列表失败' });
     }
   }, [apiSecret, selectedAccountId]);
 
@@ -216,7 +223,7 @@ export default function ContentPipelinePanel() {
       setProfileUpdatedAt(result.profile.updatedAt);
       setProfileVersions(result.versions);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Failed to load profile.' });
+      setBanner({ type: 'error', text: '加载定位配置失败' });
     } finally {
       setLoadingProfile(false);
     }
@@ -241,7 +248,7 @@ export default function ContentPipelinePanel() {
       setApiSecret(SESSION_AUTH_PLACEHOLDER);
       setLoginPassword('');
     } catch (error) {
-      setBanner({ type: 'error', text: 'Invalid credentials.' });
+      setBanner({ type: 'error', text: '凭据无效，请检查账号密码。' });
     } finally {
       setAuthSubmitting(false);
     }
@@ -254,16 +261,19 @@ export default function ContentPipelinePanel() {
       setAuthUser(null);
       setApiSecret('');
       setAccounts([]);
-      setOpportunities([]);
       setPagination(null);
       setSelectedOpportunityId(null);
       setSelectedAccountId('');
+      setOpportunities([]);
       setDraft(null);
+      setProfileForm(EMPTY_PROFILE);
+      setProfileUpdatedAt('');
+      setProfileVersions([]);
       setSynthesisReport(null);
       setRealtimeSession(null);
       setBanner(null);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Logout failed.' });
+      setBanner({ type: 'error', text: '退出登录失败' });
     } finally {
       setAuthSubmitting(false);
     }
@@ -282,7 +292,7 @@ export default function ContentPipelinePanel() {
       setOpportunities(result.items);
       setPagination(result.pagination);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Failed to load opportunities.' });
+      setBanner({ type: 'error', text: '加载创作机会失败' });
     } finally {
       setLoadingOpportunities(false);
     }
@@ -296,9 +306,9 @@ export default function ContentPipelinePanel() {
         accountId: selectedAccountId, topN: realtimeTopN, refresh,
       });
       setRealtimeSession(result);
-      setBanner({ type: 'success', text: `Sync complete: ${result.counts.storedCount} items.` });
+      setBanner({ type: 'success', text: `同步完成：已发现 ${result.counts.storedCount} 个新机会。` });
     } catch (error) {
-      setBanner({ type: 'error', text: 'Sync failed.' });
+      setBanner({ type: 'error', text: '同步机会失败' });
     } finally {
       setSyncing(false);
     }
@@ -312,10 +322,10 @@ export default function ContentPipelinePanel() {
         accountId: selectedAccountId, sessionId: realtimeSession.sessionId,
       });
       await loadDraft(generated.draft.draftId);
-      setBanner({ type: 'success', text: 'Draft generated from session.' });
+      setBanner({ type: 'success', text: '已基于当前会话生成草稿。' });
       void loadOpportunities(pagination?.page || 1);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Generation failed.' });
+      setBanner({ type: 'error', text: '生成失败' });
     } finally {
       setGeneratingRealtime(false);
     }
@@ -333,7 +343,7 @@ export default function ContentPipelinePanel() {
         } catch { setSynthesisReport(null); }
       }
     } catch (error) {
-      setBanner({ type: 'error', text: 'Failed to load draft.' });
+      setBanner({ type: 'error', text: '加载草稿详情失败' });
     } finally {
       setLoadingDraft(false);
     }
@@ -348,7 +358,7 @@ export default function ContentPipelinePanel() {
       await loadDraft(generated.draftId);
       void loadOpportunities(pagination?.page || 1);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Generation failed.' });
+      setBanner({ type: 'error', text: '生成草稿失败' });
     } finally {
       setGeneratingOpportunityId(null);
     }
@@ -361,7 +371,7 @@ export default function ContentPipelinePanel() {
       const generated = await regenerateDraft(apiSecret.trim(), draft.id);
       await loadDraft(generated.draftId);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Regeneration failed.' });
+      setBanner({ type: 'error', text: '重新生成失败' });
     } finally {
       setRegenerating(false);
     }
@@ -375,7 +385,7 @@ export default function ContentPipelinePanel() {
       await loadDraft(generated.draftId);
       void loadOpportunities(pagination?.page || 1);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Auto-generation failed.' });
+      setBanner({ type: 'error', text: '自动生产流程失败' });
     } finally {
       setAutoGenerating(false);
     }
@@ -388,7 +398,7 @@ export default function ContentPipelinePanel() {
       await planDraftAssets(apiSecret.trim(), draft.id, { imageCount: 4, stylePreset: 'news-analysis' });
       await loadDraft(draft.id);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Asset planning failed.' });
+      setBanner({ type: 'error', text: '规划配图失败' });
     } finally {
       setPlanningAssets(false);
     }
@@ -401,7 +411,7 @@ export default function ContentPipelinePanel() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Copy failed.' });
+      setBanner({ type: 'error', text: '复制失败' });
     }
   }
 
@@ -411,9 +421,9 @@ export default function ContentPipelinePanel() {
     try {
       await publishWechatDraft(apiSecret.trim(), draft.id, true);
       await loadDraft(draft.id);
-      setBanner({ type: 'success', text: 'Task submitted.' });
+      setBanner({ type: 'success', text: '发布任务已提交' });
     } catch (error) {
-      setBanner({ type: 'error', text: 'Publishing failed.' });
+      setBanner({ type: 'error', text: '提交发布失败' });
     } finally {
       setPublishing(false);
     }
@@ -426,7 +436,7 @@ export default function ContentPipelinePanel() {
       await retryPublishJob(apiSecret.trim(), jobId, allowReview);
       await loadDraft(draft.id);
     } catch (error) {
-      setBanner({ type: 'error', text: 'Retry failed.' });
+      setBanner({ type: 'error', text: '重试任务失败' });
     } finally {
       setRetryingJobId(null);
     }
@@ -439,9 +449,9 @@ export default function ContentPipelinePanel() {
       const result = await updateAccountProfile(apiSecret.trim(), selectedAccountId, buildProfilePayload(profileForm));
       setProfileForm(mapProfileForm(result.profile));
       setProfileUpdatedAt(result.profile.updatedAt);
-      setBanner({ type: 'success', text: 'Profile updated.' });
+      setBanner({ type: 'success', text: '账号定位配置已更新。' });
     } catch (error) {
-      setBanner({ type: 'error', text: 'Update failed.' });
+      setBanner({ type: 'error', text: '更新失败' });
     } finally {
       setSavingProfile(false);
     }
@@ -452,9 +462,9 @@ export default function ContentPipelinePanel() {
     try {
       const result = await rollbackAccountProfile(apiSecret.trim(), selectedAccountId, versionId);
       setProfileForm(mapProfileForm(result.profile));
-      setBanner({ type: 'success', text: 'Profile rolled back.' });
+      setBanner({ type: 'success', text: '已回滚到选定版本。' });
     } catch (error) {
-      setBanner({ type: 'error', text: 'Rollback failed.' });
+      setBanner({ type: 'error', text: '回滚失败' });
     } finally {
       setRollingBackVersionId(null);
     }
@@ -465,7 +475,7 @@ export default function ContentPipelinePanel() {
       <div className="flex items-center justify-center h-48 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3 text-slate-400 text-sm font-bold">
           <div className="w-4 h-4 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-          AUTHORIZING...
+          正在验证身份...
         </div>
       </div>
     );
@@ -475,21 +485,21 @@ export default function ContentPipelinePanel() {
     return (
       <div className="max-w-md mx-auto bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div className="mb-8 text-center">
-          <h2 className="text-xl font-black tracking-tight mb-2">Access Control</h2>
-          <p className="text-sm text-slate-500 font-medium">Please sign in to access the Trend Engine.</p>
+          <h2 className="text-xl font-black tracking-tight mb-2">访问控制</h2>
+          <p className="text-sm text-slate-500 font-medium">请登录以进入生产引擎工作台</p>
         </div>
         <div className="space-y-4">
           <input
             value={loginUsername}
             onChange={(e) => setLoginUsername(e.target.value)}
-            placeholder="Username"
+            placeholder="账号名称"
             className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium transition-all"
           />
           <input
             type="password"
             value={loginPassword}
             onChange={(e) => setLoginPassword(e.target.value)}
-            placeholder="Password"
+            placeholder="登录密码"
             className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium transition-all"
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
           />
@@ -498,7 +508,7 @@ export default function ContentPipelinePanel() {
             disabled={authSubmitting}
             className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-black tracking-wider hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/20"
           >
-            {authSubmitting ? 'SIGNING IN...' : 'CONTINUE'}
+            {authSubmitting ? '登录中...' : '继续访问'}
           </button>
         </div>
         {banner && (
@@ -520,8 +530,8 @@ export default function ContentPipelinePanel() {
             </svg>
           </div>
           <div>
-            <h2 className="text-sm font-black uppercase tracking-tight">Production Desk</h2>
-            <p className="text-[10px] font-bold text-slate-400">LOGGED IN AS: {authUser}</p>
+            <h2 className="text-sm font-black uppercase tracking-tight">内容生产工作台</h2>
+            <p className="text-[10px] font-bold text-slate-400">当前登录: {authUser}</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -530,19 +540,19 @@ export default function ContentPipelinePanel() {
             disabled={loadingOpportunities}
             className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-[10px] font-black rounded-lg hover:bg-slate-200 transition-colors uppercase"
           >
-            {loadingOpportunities ? 'Loading...' : 'Refresh'}
+            {loadingOpportunities ? '加载中' : '刷新机会'}
           </button>
           <Link
             href="/accounts/settings"
             className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-[10px] font-black rounded-lg hover:bg-slate-200 transition-colors uppercase"
           >
-            Settings
+            账号管理
           </Link>
           <button
             onClick={handleLogout}
             className="px-3 py-1.5 text-[10px] font-black text-red-500 bg-red-50 dark:bg-red-500/10 rounded-lg hover:bg-red-100 transition-colors uppercase"
           >
-            Log out
+            退出登录
           </button>
         </div>
       </div>
@@ -553,34 +563,34 @@ export default function ContentPipelinePanel() {
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                Discovery & Synthesis
+                机会发现与选题合成
               </h3>
               <button
                 onClick={() => setShowAccountSettings(!showAccountSettings)}
                 className="text-[10px] font-black text-indigo-600 hover:underline uppercase"
               >
-                {showAccountSettings ? 'Hide Config' : 'Show Config'}
+                {showAccountSettings ? '隐藏配置' : '展开配置'}
               </button>
             </div>
 
             <div className={`space-y-6 transition-all ${showAccountSettings ? 'block' : 'hidden'}`}>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase">Target Audience</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase">目标受众</label>
                   <input
                     value={profileForm.audience}
                     onChange={(e) => setProfileForm(p => ({ ...p, audience: e.target.value }))}
                     className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none"
-                    placeholder="e.g. Tech Enthusiasts"
+                    placeholder="如：科技数码爱好者"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase">Tone of Voice</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase">风格语气定位</label>
                   <input
                     value={profileForm.tone}
                     onChange={(e) => setProfileForm(p => ({ ...p, tone: e.target.value }))}
                     className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none"
-                    placeholder="e.g. Professional yet Witty"
+                    placeholder="如：硬核、专业、锐利"
                   />
                 </div>
               </div>
@@ -590,7 +600,7 @@ export default function ContentPipelinePanel() {
                   disabled={savingProfile || !selectedAccountId}
                   className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-black rounded-xl uppercase hover:opacity-90 transition-all"
                 >
-                  {savingProfile ? 'Saving...' : 'Save Profile'}
+                  {savingProfile ? '正在保存' : '保存定位配置'}
                 </button>
               </div>
               <div className="h-[1px] bg-slate-100 dark:bg-slate-800"></div>
@@ -598,22 +608,22 @@ export default function ContentPipelinePanel() {
 
             <div className="grid gap-4 md:grid-cols-3 mt-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase">Active Account</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase">当前生产账号</label>
                 <select
                   value={selectedAccountId}
                   onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none appearance-none"
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium appearance-none"
                 >
-                  <option value="">Select Account</option>
+                  <option value="">请选择账号</option>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase">Opportunity Filter</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase">机会状态筛选</label>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as OpportunityStatus)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none appearance-none"
+                  className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none font-medium appearance-none"
                 >
                   {OPPORTUNITY_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
@@ -624,7 +634,7 @@ export default function ContentPipelinePanel() {
                   disabled={syncing || !selectedAccountId}
                   className="w-full py-2 bg-indigo-600 text-white text-[11px] font-black rounded-xl uppercase hover:bg-indigo-700 transition-all shadow-md shadow-indigo-500/10"
                 >
-                  {syncing ? 'Scanning...' : 'Sync Opportunities'}
+                  {syncing ? '检索中...' : '同步创作机会'}
                 </button>
               </div>
             </div>
@@ -667,7 +677,7 @@ export default function ContentPipelinePanel() {
 
         <aside className="space-y-6">
           <div className="bg-slate-900 dark:bg-slate-800 text-white p-6 rounded-2xl shadow-xl">
-            <h4 className="text-[10px] font-black tracking-widest text-indigo-400 mb-4 uppercase">Direct Automation</h4>
+            <h4 className="text-[10px] font-black tracking-widest text-indigo-400 mb-4 uppercase">智能流水线</h4>
             <div className="space-y-4">
               <button
                 onClick={handleAutoGenerate}
@@ -679,10 +689,10 @@ export default function ContentPipelinePanel() {
                 ) : (
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                 )}
-                Auto AI Flow
+                全自动 AI 创作
               </button>
               <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
-                Trigger end-to-end AI synthesis from current trends for the active profile.
+                触发端到端 AI 选题流程，基于当前实时热榜为该账号自动生产高匹配度稿件。
               </p>
             </div>
           </div>
@@ -698,11 +708,11 @@ export default function ContentPipelinePanel() {
 
           {synthesisReport && (
             <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800">
-              <h4 className="text-[10px] font-black text-slate-400 mb-4 uppercase">Synthesis Trace</h4>
+              <h4 className="text-[10px] font-black text-slate-400 mb-4 uppercase">选题合成溯源</h4>
               <div className="space-y-3">
                 <div className="text-xs font-bold leading-snug">{synthesisReport.report.finalTopic}</div>
                 <p className="text-[10px] text-slate-500 leading-relaxed italic">
-                  &quot;{synthesisReport.report.oneLiner}&quot;
+                  &ldquo;{synthesisReport.report.oneLiner}&rdquo;
                 </p>
               </div>
             </div>

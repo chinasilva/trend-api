@@ -15,51 +15,41 @@ test.describe('production content console flow', () => {
     const accountName = `PW全流程-${uniqueSuffix}`;
 
     await page.goto('/');
-    await expect(page.getByRole('button', { name: '内容生产' })).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByRole('button', { name: '生产引擎' })).toBeVisible({ timeout: 120_000 });
 
-    await page.getByRole('button', { name: '内容生产' }).click();
-    await page.getByPlaceholder('登录账号').fill(username);
+    await page.getByRole('button', { name: '生产引擎' }).click();
+    await page.getByPlaceholder('账号名称').fill(username);
     await page.getByPlaceholder('登录密码').fill(password);
-    await page.getByRole('button', { name: '登录' }).click();
-    await expect(page.getByRole('heading', { name: '内容生产操作台' })).toBeVisible();
+    await page.getByRole('button', { name: '继续访问' }).click();
+    await expect(page.getByRole('heading', { name: '内容生产工作台' })).toBeVisible();
 
-    await page.getByRole('link', { name: '账号设置页' }).click();
+    await page.getByRole('link', { name: '账号管理' }).click();
     await expect(page).toHaveURL(/\/accounts\/settings/);
-    await expect(page.getByRole('button', { name: '保存账号信息' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: '新建账号' })).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole('button', { name: '新建账号' }).click();
-    await expect(page.getByRole('button', { name: '创建账号' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: '创建新账号' })).toBeVisible({ timeout: 15_000 });
 
-    await page.getByPlaceholder('账号名称').fill(accountName);
-    await page.getByPlaceholder('账号描述（可选）').fill('Playwright 生产链路自动化测试账号');
-    await page.getByRole('button', { name: '创建账号' }).click();
-    await expect(
-      page
-        .locator('p')
-        .filter({ hasText: /账号创建成功。|账号更新成功。/ })
-        .first()
-    ).toBeVisible({ timeout: 120_000 });
+    await page.locator('input').nth(0).fill(accountName);
+    await page.getByRole('button', { name: '创建新账号' }).click();
+    await expect(page.getByText('账号信息已同步。')).toBeVisible({ timeout: 120_000 });
 
-    await page.getByPlaceholder('目标读者').fill('关注商业与科技趋势的公众号读者');
-    await page.getByPlaceholder('语气风格').fill('专业、克制、可执行');
-    await page.getByPlaceholder('增长目标').fill('follow');
-    await page.getByPlaceholder('内容承诺').fill('提供可验证信息与行动建议');
-    await page.getByPlaceholder('CTA 风格').fill('结尾提问引导留言');
-    await page.getByPlaceholder('读者痛点（分号分隔）').fill('信息碎片化；缺少行动方案');
-    await page.getByPlaceholder('禁区（分号分隔）').fill('谣言；医疗投资建议');
-    await page.getByRole('button', { name: '保存并全局生效' }).click();
-    await expect(page.getByText('账号定位保存成功，已全局生效。')).toBeVisible({ timeout: 30_000 });
+    await page.getByPlaceholder('如：高净值商务人士').fill('关注商业与科技趋势的公众号读者');
+    await page.getByPlaceholder('如：权威、冷静、客观').fill('专业、克制、可执行');
+    await page.getByPlaceholder('如：提升业界影响力').fill('follow');
+    await page.locator('textarea').first().fill('信息碎片化；缺少行动方案');
+    await page.getByRole('button', { name: '保存并应用定位策略' }).click();
+    await expect(page.getByText('定位配置已全局生效。')).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole('link', { name: '返回首页' }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await page.goto('/');
 
-    await page.getByRole('button', { name: '内容生产' }).click();
-    await expect(page.getByRole('heading', { name: '内容生产操作台' })).toBeVisible();
+    await page.getByRole('button', { name: '生产引擎' }).click();
+    await expect(page.getByRole('heading', { name: '内容生产工作台' })).toBeVisible();
 
-    await page.getByRole('button', { name: '同步机会' }).click();
+    await page.getByRole('button', { name: '同步创作机会' }).click();
     await page
       .locator('div')
-      .filter({ hasText: /^同步完成：聚类 \d+，机会 \d+。$/ })
+      .filter({ hasText: /^同步完成：已发现 \d+ 个新机会。$/ })
       .first()
       .waitFor({ state: 'visible', timeout: 30_000 })
       .catch(() => {
@@ -68,7 +58,7 @@ test.describe('production content console flow', () => {
 
     await page.getByRole('button', { name: '刷新机会' }).click();
 
-    const generateButton = page.getByRole('button', { name: '生成草稿' }).first();
+    const generateButton = page.getByRole('button', { name: '一键生成稿件' }).first();
     await expect(generateButton).toBeVisible({ timeout: 120_000 });
     await generateButton.click();
 
