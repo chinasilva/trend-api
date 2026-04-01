@@ -2,8 +2,8 @@ name: Fetch Trends
 
 on:
   schedule:
-    # 每 30 分钟执行一次
-    - cron: '*/30 * * * *'
+    # 每 6 小时执行一次（UTC）
+    - cron: '0 */6 * * *'
   workflow_dispatch:  # 允许手动触发
 
 jobs:
