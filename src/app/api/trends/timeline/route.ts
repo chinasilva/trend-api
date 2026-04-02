@@ -49,10 +49,12 @@ export async function GET(request: NextRequest) {
     const pageSize = parsePositiveInt(searchParams.get('pageSize'), 20);
     const result = await getSnapshotTimeline(page, pageSize, platform || undefined);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: result,
     });
+    response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=240');
+    return response;
   } catch (error) {
     console.error('[GET /api/trends/timeline] failed:', error);
     return NextResponse.json(
