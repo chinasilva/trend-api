@@ -46,6 +46,14 @@ interface TimelineResponse {
   message?: string;
 }
 
+function appendPlatformParam(params: URLSearchParams, platform: Platform | 'all') {
+  if (platform !== 'all') {
+    params.set('platform', platform);
+  }
+
+  return params;
+}
+
 function toSnapshotKey(snapshotAt: string | null | undefined) {
   if (!snapshotAt) {
     return null;
@@ -104,6 +112,7 @@ export default function Home() {
   const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [timelinePagination, setTimelinePagination] = useState<TimelinePagination | null>(null);
   const [selectedSnapshotKey, setSelectedSnapshotKey] = useState<string | null>(null);
+  const [selectedSnapshotAt, setSelectedSnapshotAt] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchTrends(options?: { snapshotAt?: string; initial?: boolean }) {
@@ -141,6 +150,7 @@ export default function Home() {
           throw new Error(data.message || data.error || 'Failed to fetch trends');
         }
         setTrendsData(data);
+        setSelectedSnapshotAt(data.snapshotAt || null);
         setSelectedSnapshotKey(toSnapshotKey(data.snapshotAt));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'An error occurred';
@@ -203,7 +213,7 @@ export default function Home() {
     setTimelineError(null);
     setSnapshotLoading(true);
     try {
-      const params = new URLSearchParams({ snapshotAt });
+      const params = appendPlatformParam(new URLSearchParams({ snapshotAt }), activePlatform);
       const response = await fetch(`/api/trends?${params.toString()}`);
       if (!response.ok) {
         let errorMessage = `Failed to fetch trends (${response.status})`;
@@ -220,11 +230,86 @@ export default function Home() {
         throw new Error(data.message || data.error || 'Failed to fetch trends');
       }
       setTrendsData(data);
+      setSelectedSnapshotAt(data.snapshotAt || snapshotAt);
       setSelectedSnapshotKey(toSnapshotKey(data.snapshotAt || snapshotAt));
     } catch (err) {
       setTimelineError(err instanceof Error ? err.message : 'Failed to switch snapshot');
     } finally {
       setSnapshotLoading(false);
+    }
+  };
+
+  const handlePlatformChange = async (platform: Platform | 'all') => {
+    if (platform === activePlatform) {
+      return;
+    }
+
+    setActivePlatform(platform);
+    setTimelineError(null);
+    setSnapshotLoading(true);
+    setTimelineLoading(true);
+
+    try {
+      const trendsParams = appendPlatformParam(new URLSearchParams(), platform);
+      if (selectedSnapshotAt) {
+        trendsParams.set('snapshotAt', selectedSnapshotAt);
+      }
+
+      const timelineParams = appendPlatformParam(
+        new URLSearchParams({
+          page: '1',
+          pageSize: '12',
+        }),
+        platform
+      );
+
+      const [trendsResponse, timelineResponse] = await Promise.all([
+        fetch(`/api/trends${trendsParams.toString() ? `?${trendsParams.toString()}` : ''}`),
+        fetch(`/api/trends/timeline?${timelineParams.toString()}`),
+      ]);
+
+      if (!trendsResponse.ok) {
+        let errorMessage = `Failed to fetch trends (${trendsResponse.status})`;
+        try {
+          const payload = await trendsResponse.json();
+          errorMessage = payload.message || payload.error || errorMessage;
+        } catch {
+          // no-op
+        }
+        throw new Error(errorMessage);
+      }
+
+      if (!timelineResponse.ok) {
+        let errorMessage = `Failed to fetch timeline (${timelineResponse.status})`;
+        try {
+          const payload = await timelineResponse.json();
+          errorMessage = payload.message || payload.error || errorMessage;
+        } catch {
+          // no-op
+        }
+        throw new Error(errorMessage);
+      }
+
+      const trendsPayload = await trendsResponse.json() as TrendsData;
+      if (!trendsPayload.success) {
+        throw new Error(trendsPayload.message || trendsPayload.error || 'Failed to fetch trends');
+      }
+
+      const timelinePayload = await timelineResponse.json() as TimelineResponse;
+      if (!timelinePayload.success || !timelinePayload.data) {
+        throw new Error(timelinePayload.message || timelinePayload.error || 'Failed to fetch timeline');
+      }
+
+      setTrendsData(trendsPayload);
+      setSelectedSnapshotAt(trendsPayload.snapshotAt || selectedSnapshotAt);
+      setSelectedSnapshotKey(toSnapshotKey(trendsPayload.snapshotAt || selectedSnapshotAt));
+      setTimelineItems(timelinePayload.data.items);
+      setTimelinePagination(timelinePayload.data.pagination);
+    } catch (err) {
+      setTimelineError(err instanceof Error ? err.message : 'Failed to switch platform');
+    } finally {
+      setSnapshotLoading(false);
+      setTimelineLoading(false);
     }
   };
 
@@ -236,7 +321,14 @@ export default function Home() {
     setTimelineLoading(true);
     setTimelineError(null);
     try {
-      const response = await fetch(`/api/trends/timeline?page=${nextPage}&pageSize=12`);
+      const params = appendPlatformParam(
+        new URLSearchParams({
+          page: nextPage.toString(),
+          pageSize: '12',
+        }),
+        activePlatform
+      );
+      const response = await fetch(`/api/trends/timeline?${params.toString()}`);
       if (!response.ok) {
         let errorMessage = `Failed to fetch timeline (${response.status})`;
         try {
@@ -465,7 +557,9 @@ export default function Home() {
 
             <PlatformTabs
               activePlatform={activePlatform}
-              onPlatformChange={setActivePlatform}
+              onPlatformChange={(platform) => {
+                void handlePlatformChange(platform);
+              }}
             />
 
             <div className="mt-8">

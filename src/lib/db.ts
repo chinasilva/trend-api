@@ -24,6 +24,7 @@ export interface TimelinePagination {
 
 interface TrendReadOptions {
   includeRichFields?: boolean;
+  limitPerPlatform?: number;
 }
 
 const trendApiBaseSelect = {
@@ -148,6 +149,18 @@ function buildTrendSelect(includeRichFields = false) {
 
 function buildSnapshotSelect(includeRichFields = false) {
   return includeRichFields ? snapshotApiRichSelect : snapshotApiBaseSelect;
+}
+
+function buildRankLimitWhere(limitPerPlatform?: number) {
+  if (!limitPerPlatform || limitPerPlatform < 1) {
+    return {};
+  }
+
+  return {
+    rank: {
+      lte: limitPerPlatform,
+    },
+  };
 }
 
 function toTrendItem(
@@ -318,6 +331,7 @@ export async function getTrendsFromDB(
   options: TrendReadOptions = {}
 ) {
   const includeRichFields = options.includeRichFields === true;
+  const rankLimitWhere = buildRankLimitWhere(options.limitPerPlatform);
   const platforms = Array.isArray(platformOrPlatforms)
     ? platformOrPlatforms
     : platformOrPlatforms
@@ -330,6 +344,7 @@ export async function getTrendsFromDB(
   }
 
   const where = {
+    ...rankLimitWhere,
     OR: latestTargets.map((target) => ({
       source: { platform: target.platform },
       updatedAt: {
@@ -492,6 +507,7 @@ export async function getTrendsByDate(
   options: TrendReadOptions = {}
 ) {
   const includeRichFields = options.includeRichFields === true;
+  const rankLimitWhere = buildRankLimitWhere(options.limitPerPlatform);
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -501,6 +517,7 @@ export async function getTrendsByDate(
   // 查找最接近指定日期的快照
   const snapshots = await prisma.snapshot.findMany({
     where: {
+      ...rankLimitWhere,
       createdAt: {
         gte: startOfDay,
         lte: endOfDay,
@@ -535,6 +552,7 @@ export async function getLatestSnapshot(
 ) {
   const includeRichFields = options.includeRichFields === true;
   const where = platform ? { content: { source: { platform } } } : {};
+  const rankLimitWhere = buildRankLimitWhere(options.limitPerPlatform);
 
   // 找到最新的快照时间
   const latestSnapshot = await prisma.snapshot.findFirst({
@@ -552,6 +570,7 @@ export async function getLatestSnapshot(
   // 获取同一时间点的所有快照
   const snapshots = await prisma.snapshot.findMany({
     where: {
+      ...rankLimitWhere,
       createdAt: {
         gte: new Date(snapshotAt.getTime() - SNAPSHOT_TOLERANCE_MS),
         lte: new Date(snapshotAt.getTime() + SNAPSHOT_TOLERANCE_MS),
@@ -597,6 +616,7 @@ export async function getTrendsBySnapshotAt(
 ) {
   const includeRichFields = options.includeRichFields === true;
   const where = platform ? { content: { source: { platform } } } : {};
+  const rankLimitWhere = buildRankLimitWhere(options.limitPerPlatform);
 
   // 优先按精确时间点命中（对应 timeline 返回的 snapshotAt）。
   const exactHit = await prisma.snapshot.findFirst({
@@ -632,6 +652,7 @@ export async function getTrendsBySnapshotAt(
 
   const snapshots = await prisma.snapshot.findMany({
     where: {
+      ...rankLimitWhere,
       createdAt: targetCreatedAt,
       ...where,
     },
@@ -737,6 +758,7 @@ export async function getSnapshotTimeline(page = 1, pageSize = 20, platform?: Pl
 // 按日期查询所有平台快照
 export async function getAllTrendsByDate(date: Date, options: TrendReadOptions = {}) {
   const includeRichFields = options.includeRichFields === true;
+  const rankLimitWhere = buildRankLimitWhere(options.limitPerPlatform);
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -763,6 +785,7 @@ export async function getAllTrendsByDate(date: Date, options: TrendReadOptions =
   // 获取同一时间点的所有快照
   const snapshots = await prisma.snapshot.findMany({
     where: {
+      ...rankLimitWhere,
       createdAt: {
         gte: new Date(snapshotAt.getTime() - SNAPSHOT_TOLERANCE_MS),
         lte: new Date(snapshotAt.getTime() + SNAPSHOT_TOLERANCE_MS),
